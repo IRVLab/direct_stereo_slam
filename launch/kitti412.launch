@@ -1,0 +1,15 @@
+<launch>
+
+  <rosparam command="load" file="$(find direct_stereo_slam)/cams/kitti/04_10/T_stereo.yaml" ns="so_dso"/>
+
+  <node name="so_dso" pkg="direct_stereo_slam" type="so_dso_node" output="screen">
+    <param name="cam0_topic" value="/left/image_raw" />
+    <param name="cam1_topic" value="/right/image_raw" />
+    <param name="calib0" value="$(find direct_stereo_slam)/cams/kitti/04_10/camera0.txt" />
+    <param name="calib1" value="$(find direct_stereo_slam)/cams/kitti/04_10/camera1.txt" />
+    <param name="init_scale" value="20.0" />
+    <param name="mode" value="1" />
+    <param name="preset" value="2" />
+  </node>
+
+  </launch>

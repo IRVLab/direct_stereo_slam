@@ -1,0 +1,21 @@
+<!-- Follow this format to create a launch file -->
+
+<launch>
+
+  <rosparam command="load" file="[PATH_TO_STEREO_CONFIG]/T_stereo.yaml" ns="so_dso"/>
+
+  <node name="so_dso" pkg="direct_stereo_slam" type="so_dso_node" output="screen">
+    <param name="cam0_topic" value="[CAM0 TOPIC]" />
+    <param name="cam1_topic" value="[CAM1 TOPIC]" />
+    <param name="calib0" value="[PATH_TO_STEREO_CONFIG]/camera0.txt" />
+    <param name="calib1" value="[PATH_TO_STEREO_CONFIG]/camera1.txt" />
+
+    <!-- DSO parameters -->
+    <param name="mode" value="1" />
+    <param name="preset" value="0" />
+
+    <!-- Threshold to accept scale optimization result -->
+    <param name="scale_accept_th" value="10" />
+  </node>
+
+  </launch>

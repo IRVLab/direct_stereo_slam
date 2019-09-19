@@ -1,0 +1,15 @@
+<launch>
+
+  <rosparam command="load" file="/home/jiawei/Workspace/data/cams/tara/T_stereo.yaml" ns="so_dso"/>
+
+  <node name="so_dso" pkg="direct_stereo_slam" type="so_dso_node" output="screen">
+    <param name="cam0_topic" value="/tara/left/image_raw" />
+    <param name="cam1_topic" value="/tara/right/image_raw" />
+    <param name="calib0" value="/home/jiawei/Workspace/data/cams/tara/camera0.txt" />
+    <param name="calib1" value="/home/jiawei/Workspace/data/cams/tara/camera1.txt" />
+    <param name="mode" value="1" />
+    <param name="preset" value="0" />
+    <param name="scale_accept_th" value="10" />
+  </node>
+
+  </launch>
