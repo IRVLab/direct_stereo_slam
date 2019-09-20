@@ -241,7 +241,7 @@ bool ScaleOptimizer::optimize(FrameHessian *newFrameHessian, float &scale,
     }
   }
 
-  printf("Final scale: %f Final res: %f\n", scale_current, lastResiduals[0]);
+  // printf("Final scale: %f Final res: %f\n", scale_current, lastResiduals[0]);
 
   if (scale_current < 0 || !(lastResiduals[0] < accept_th)) {
     printf("Scale opt. rejected: coarsestLvl=%d, scale changed: %f -> %f\n",

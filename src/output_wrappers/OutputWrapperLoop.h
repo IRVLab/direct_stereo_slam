@@ -6,8 +6,6 @@
 #include "FullSystem/HessianBlocks.h"
 #include "util/FrameShell.h"
 
-#include "place_recognition/process_pts/pts_align.h"
-#include "place_recognition/process_pts/pts_preprocess.h"
 #include "place_recognition/scan_context/ScanContext.h"
 #include "place_recognition/utils/PosesPts.h"
 
@@ -31,8 +29,10 @@ private:
   double voxelAngle;
 
   ScanContext *sc_ptr;
-  int id_signature_history;
-  Eigen::MatrixXd signature_history;
+  Eigen::VectorXi ids;
+  Eigen::MatrixXd signatures_structure;
+  Eigen::MatrixXd signatures_intensity;
+  int signature_count;
 
 public:
   OutputWrapperLoop();

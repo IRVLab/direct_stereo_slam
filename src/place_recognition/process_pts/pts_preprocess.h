@@ -40,10 +40,10 @@ get_pts_spherical(const IDPose *cur_pose,
   filterPointsPolar(pts_spherical_raw, lidarRange, {voxelAngle, voxelAngle, 1},
                     pts_spherical, false);
 
-  printf("\rFrame count: %d, Pts (Total: %lu, Sphere: %lu, Filtered: %lu)",
-         cur_pose->incoming_id, pts_nearby.size(), pts_spherical_raw.size(),
-         pts_spherical.size());
-  fflush(stdout);
+  // printf("\rFrame count: %d, Pts (Total: %lu, Sphere: %lu, Filtered: %lu)",
+  //        cur_pose->incoming_id, pts_nearby.size(), pts_spherical_raw.size(),
+  //        pts_spherical.size());
+  // fflush(stdout);
 }
 
 inline bool
