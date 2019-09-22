@@ -32,7 +32,7 @@ Time logs:
 - ba_time.txt: runtime of bundle adjustment.
 
 # Parameters
-The only extra parameter of this work over [DSO](https://github.com/JakobEngel/dso) is the scale_accept_th, which is the threshold to accept a result from scaler optimizer. Usually, it is around 10-15.# place_recognition
+The only extra parameter of this work over [DSO](https://github.com/JakobEngel/dso) is the scale_accept_th, which is the threshold to accept a result from scaler optimizer. Usually, it is around 10-15.
 
 # Files for place recognition in .ros folder
 - poses_history_file.txt: [incoming_id, pose[t11, t12, ..., t34]]

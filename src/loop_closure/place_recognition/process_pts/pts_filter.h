@@ -5,7 +5,7 @@
 #include <cmath>
 #include <vector>
 
-#include "place_recognition/utils/PosesPts.h"
+#include "loop_closure/place_recognition/utils/PosesPts.h"
 
 using namespace std;
 

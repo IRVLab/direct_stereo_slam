@@ -36,6 +36,7 @@ void ScanContext::getSignature(
   for (int i = 0; i < pts_clr.size(); i++) // loop on pts
   {
     // projection to polar coordinate
+    // After PCA, x: up; y: left; z:back
     double yp = pts_clr[i].first(1);
     double zp = pts_clr[i].first(2);
 

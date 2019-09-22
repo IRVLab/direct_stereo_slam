@@ -1,7 +1,8 @@
 #include "OutputWrapperLoop.h"
-#include "place_recognition/process_pts/pts_align.h"
-#include "place_recognition/process_pts/pts_preprocess.h"
-#include "place_recognition/utils/find_closest_place.h"
+#include "loop_closure/place_recognition/process_pts/pts_align.h"
+#include "loop_closure/place_recognition/process_pts/pts_preprocess.h"
+#include "loop_closure/place_recognition/utils/find_closest_place.h"
+#include "loop_closure/place_recognition/utils/get_transformation.h"
 
 #define LOOP_MARGIN 50
 
@@ -23,6 +24,14 @@ OutputWrapperLoop::OutputWrapperLoop()
   ids = Eigen::VectorXi(500, 1);
   signatures_structure = Eigen::MatrixXd(500, sc_ptr->getSignatureSize());
   signatures_intensity = Eigen::MatrixXd(500, sc_ptr->getSignatureSize());
+  Ts_pca_rig = Eigen::MatrixXd(4 * 500, 4);
+
+  pose_estimator = new PoseEstimator(wG[0], hG[0]);
+
+#if COMPARE_PCL
+  pcl_viewer = new pcl::visualization::CloudViewer(
+      "R: query; G: matched; B: matched transferred");
+#endif
 }
 
 OutputWrapperLoop::OutputWrapperLoop(double lr, double va) {
@@ -39,6 +48,10 @@ OutputWrapperLoop::~OutputWrapperLoop() {
     delete pt;
   }
   delete sc_ptr;
+
+  delete pose_estimator;
+
+  delete pcl_viewer;
 }
 
 void OutputWrapperLoop::publishKeyframes(std::vector<FrameHessian *> &frames,
@@ -84,7 +97,8 @@ void OutputWrapperLoop::publishKeyframes(std::vector<FrameHessian *> &frames,
 
     //============= Align spherical points by PCA ===========================
     std::vector<std::pair<Eigen::Vector3d, float>> pts_spherical_aligned;
-    align_points_PCA(pts_spherical, pts_spherical_aligned);
+    Eigen::Matrix<double, 4, 4> T_pca_rig;
+    align_points_PCA(pts_spherical, pts_spherical_aligned, T_pca_rig);
 
     //============= Get a signature from the aligned points by Scan Context =
     Eigen::VectorXd signature_structure, signature_intensity;
@@ -106,8 +120,22 @@ void OutputWrapperLoop::publishKeyframes(std::vector<FrameHessian *> &frames,
           LOOP_MARGIN, sc_ptr->getHeight(), sc_ptr->getWidth(), idx,
           yaw_reverse, difference);
       if (difference < -5) {
+        // Calculate T_query_matched
+        Eigen::Matrix<double, 4, 4> T_query_matched = get_transformation(
+            T_pca_rig, Ts_pca_rig, idx, yaw_reverse, sc_ptr->getWidth());
         std::cout << poses_history.back()->incoming_id << "  " << ids(idx)
                   << " " << difference << std::endl;
+
+        if (pose_estimator->estimate(pts_spherical_history[idx],
+                                     affLightExposures[idx], fh, HCalib,
+                                     T_query_matched)) {
+
+#if COMPARE_PCL
+          auto cloud_ptr = merge_point_clouds(
+              pts_spherical, pts_spherical_history[idx], T_query_matched);
+          pcl_viewer->showCloud(cloud_ptr);
+#endif
+        }
       }
     }
 
@@ -118,10 +146,15 @@ void OutputWrapperLoop::publishKeyframes(std::vector<FrameHessian *> &frames,
                                               signatures_structure.cols());
       signatures_intensity.conservativeResize(signatures_intensity.rows() + 500,
                                               signatures_intensity.cols());
+      Ts_pca_rig.conservativeResize(Ts_pca_rig.rows() + 4 * 500,
+                                    Ts_pca_rig.cols());
     }
     ids(signature_count) = poses_history.back()->incoming_id;
     signatures_structure.row(signature_count) = signature_structure.transpose();
     signatures_intensity.row(signature_count) = signature_intensity.transpose();
+    Ts_pca_rig.block<4, 4>(4 * signature_count, 0) = T_pca_rig;
+    pts_spherical_history.push_back(pts_spherical);
+    affLightExposures.push_back({fh->aff_g2l(), fh->ab_exposure});
     signature_count++;
   }
 }

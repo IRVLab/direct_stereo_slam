@@ -9,8 +9,8 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl_ros/point_cloud.h>
 
-#include "place_recognition/process_pts/pts_filter.h"
-#include "place_recognition/utils/PosesPts.h"
+#include "loop_closure/place_recognition/process_pts/pts_filter.h"
+#include "loop_closure/place_recognition/utils/PosesPts.h"
 
 #define PTS_HIST 6
 #define INIT_FRAME 30

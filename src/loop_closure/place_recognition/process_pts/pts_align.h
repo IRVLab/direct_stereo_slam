@@ -4,7 +4,8 @@
 
 inline void align_points_PCA(
     const std::vector<std::pair<Eigen::Vector3d, float>> &pts_clr_in,
-    std::vector<std::pair<Eigen::Vector3d, float>> &pts_clr_out) {
+    std::vector<std::pair<Eigen::Vector3d, float>> &pts_clr_out,
+    Eigen::Matrix<double, 4, 4> &T_pca_rig) {
   double mx(0), my(0), mz(0);
   for (auto &pc : pts_clr_in) {
     mx += pc.first(0);
@@ -41,4 +42,11 @@ inline void align_points_PCA(
     pts_clr_out.push_back(
         {Eigen::Vector3d(nx(i), ny(i), nz(i)), pts_clr_in[i].second});
   }
+
+  // Transformation
+  T_pca_rig = Eigen::Matrix<double, 4, 4>::Identity();
+  T_pca_rig.block<1, 3>(0, 0) = v0.transpose();
+  T_pca_rig.block<1, 3>(1, 0) = v1.transpose();
+  T_pca_rig.block<1, 3>(2, 0) = v2.transpose();
+  T_pca_rig.block<3, 1>(0, 3) << mx, my, mz;
 }
