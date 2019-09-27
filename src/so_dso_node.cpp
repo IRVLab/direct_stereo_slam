@@ -34,8 +34,6 @@
 #include <sensor_msgs/Imu.h>
 #include <std_msgs/String.h>
 
-#include "output_wrappers/OutputWrapperLoop.h"
-
 using namespace dso;
 
 sig_atomic_t stopFlag = 0; // sigint flag
@@ -59,8 +57,6 @@ private:
   Undistort *undistorter0;
   Undistort *undistorter1;
   int frameID;
-
-  IOWrap::OutputWrapperLoop *outputWrapperLoop;
 
   float playbackSpeed =
       0; // 0 for linearize (play as fast as possible, while sequentializing
@@ -195,9 +191,6 @@ SODSONode::SODSONode() {
     so_dso_System->outputWrapper.push_back(new IOWrap::PangolinDSOViewer(
         (int)undistorter0->getSize()[0], (int)undistorter0->getSize()[1]));
 
-  outputWrapperLoop = new IOWrap::OutputWrapperLoop();
-  so_dso_System->outputWrapper.push_back(outputWrapperLoop);
-
   ros::NodeHandle nh;
   typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image,
                                                           sensor_msgs::Image>
@@ -221,7 +214,6 @@ SODSONode::~SODSONode() {
   delete so_dso_System;
   delete undistorter0;
   delete undistorter1;
-  delete outputWrapperLoop;
 }
 
 void SODSONode::finish() {

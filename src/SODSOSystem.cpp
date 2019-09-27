@@ -27,6 +27,8 @@
 #include <cmath>
 #include <queue>
 
+#define setting_enableLoop true
+
 namespace dso {
 int FrameHessian::instanceCounter = 0;
 int PointHessian::instanceCounter = 0;
@@ -144,7 +146,10 @@ SODSOSystem::SODSOSystem(int w, int h, const Eigen::Matrix3f &K,
   undistorter = undistorter_;
   init_scale = init_scale_;
   scale_opt_trapped = false;
-  scaleOptimizer = new dso::ScaleOptimizer(w, h, K, T_stereo, scale_accept_th);
+  scaleOptimizer = new ScaleOptimizer(w, h, K, T_stereo, scale_accept_th);
+  if (setting_enableLoop) {
+    sodsoLoopHandler = new SODSOLoopHandler();
+  }
 }
 
 SODSOSystem::~SODSOSystem() {
@@ -187,6 +192,9 @@ SODSOSystem::~SODSOSystem() {
   delete ef;
 
   delete scaleOptimizer;
+  if (setting_enableLoop) {
+    delete sodsoLoopHandler;
+  }
 }
 
 void SODSOSystem::setOriginalCalib(const VecXf &originalCalib, int originalW,
@@ -1175,6 +1183,13 @@ void SODSOSystem::makeKeyFrame(FrameHessian *fh) {
 
   for (unsigned int i = 0; i < frameHessians.size(); i++)
     if (frameHessians[i]->flaggedForMarginalization) {
+      if (setting_enableLoop) {
+        int io = frameHessians[i]->idx * 8 + CPARS;
+        Mat66 poseHessian = ef->HM.block<6, 6>(io, io);
+        // std::cout << "PoseHessian " << std::log10(poseHessian.determinant())
+        // << std::endl;
+        sodsoLoopHandler->addKeyFrame(frameHessians[i], &Hcalib, poseHessian);
+      }
       marginalizeFrame(frameHessians[i]);
       i = 0;
     }

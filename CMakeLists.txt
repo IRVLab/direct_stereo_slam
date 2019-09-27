@@ -67,7 +67,7 @@ include_directories(${DSO_INCLUDE_DIRS} src)
 add_executable(
   so_dso_node src/so_dso_node.cpp 
   ${SODSOSystem_SOURCE_FILES} 
-  src/output_wrappers/OutputWrapperLoop.cpp 
+  src/loop_closure/SODSOLoopHandler.cpp 
   src/scale_optimization/ScaleOptimizer.cpp 
   src/loop_closure/pose_estimation/PoseEstimator.cpp 
   src/loop_closure/place_recognition/scan_context/ScanContext.cpp)

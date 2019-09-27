@@ -1,5 +1,4 @@
 #pragma once
-#include "IOWrapper/Output3DWrapper.h"
 #include "boost/thread.hpp"
 #include "util/MinimalImage.h"
 
@@ -23,9 +22,7 @@ class FrameHessian;
 class CalibHessian;
 class FrameShell;
 
-namespace IOWrap {
-
-class OutputWrapperLoop : public Output3DWrapper {
+class SODSOLoopHandler {
 private:
   std::vector<IDPose *> poses_history;
   std::vector<IDPtIntensity *> pts_history;
@@ -55,14 +52,11 @@ private:
 #endif
 
 public:
-  OutputWrapperLoop();
-  OutputWrapperLoop(double lr, double va);
-  ~OutputWrapperLoop();
+  SODSOLoopHandler();
+  SODSOLoopHandler(double lr, double va);
+  ~SODSOLoopHandler();
 
-  void publishKeyframes(std::vector<FrameHessian *> &frames, bool final,
-                        CalibHessian *HCalib) override;
+  void addKeyFrame(FrameHessian *fh, CalibHessian *HCalib, Mat66 poseHessian);
 };
-
-} // namespace IOWrap
 
 } // namespace dso

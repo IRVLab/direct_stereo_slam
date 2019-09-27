@@ -33,8 +33,8 @@ PoseEstimator::PoseEstimator(int ww, int hh) : lastRef_aff_g2l(0, 0) {
   buf_warped_refColor = allocAligned<4, float>(ww * hh, ptrToDelete);
 
   newFrame = 0;
-  debugPlot = true;
-  debugPrint = true;
+  debugPlot = false;
+  debugPrint = false;
   w[0] = h[0] = 0;
 }
 
@@ -152,9 +152,15 @@ Vec6 PoseEstimator::calcRes(int lvl, const SE3 &refToNew, AffLight aff_g2l,
       setting_huberTH * setting_huberTH; // energy for r=setting_coarseCutoffTH.
 
   MinimalImageB3 *resImage = 0;
-  if (debugPlot) {
+  if (debugPlot || lvl == 0) {
     resImage = new MinimalImageB3(wl, hl);
-    resImage->setConst(Vec3b(255, 255, 255));
+    resImage->setBlack();
+    for (int i = 0; i < h[lvl] * w[lvl]; i++) {
+      int c = newFrame->dIp[lvl][i][0] * 0.9f;
+      if (c > 255)
+        c = 255;
+      resImage->at(i) = Vec3b(c, c, c);
+    }
   }
 
   for (int i = 0; i < pointxyzi.rows(); i++) {
@@ -220,15 +226,14 @@ Vec6 PoseEstimator::calcRes(int lvl, const SE3 &refToNew, AffLight aff_g2l,
         fabs(residual) < setting_huberTH ? 1 : setting_huberTH / fabs(residual);
 
     if (fabs(residual) > cutoffTH) {
-      if (debugPlot)
-        resImage->setPixel4(Ku0, Kv0, Vec3b(0, 0, 255));
+      if (debugPlot || lvl == 0)
+        resImage->setPixel4(Ku, Kv, Vec3b(0, 0, 255));
       E += maxEnergy;
       numTermsInE++;
       numSaturated++;
     } else {
-      if (debugPlot)
-        resImage->setPixel4(
-            Ku0, Kv0, Vec3b(residual + 128, residual + 128, residual + 128));
+      if (debugPlot || lvl == 0)
+        resImage->setPixel4(Ku, Kv, Vec3b(0, residual + 128, 0));
 
       E += hw * residual * residual * (2 - hw);
       numTermsInE++;
@@ -262,6 +267,10 @@ Vec6 PoseEstimator::calcRes(int lvl, const SE3 &refToNew, AffLight aff_g2l,
     IOWrap::displayImage("RES", resImage, false);
     IOWrap::waitKey(0);
     delete resImage;
+  } else if (lvl == 0) {
+    IOWrap::displayImage("RES", resImage, false);
+    IOWrap::waitKey(1);
+    delete resImage;
   }
 
   Vec6 rs;
@@ -287,12 +296,12 @@ void PoseEstimator::setPointsRef(
   }
 }
 
-bool PoseEstimator::estimate(
+void PoseEstimator::estimate(
     const std::vector<std::pair<Eigen::Vector3d, float>> &pts,
     const std::pair<AffLight, float> &affLightExposure,
     FrameHessian *newFrameHessian, CalibHessian *HCalib,
-    Eigen::Matrix<double, 4, 4> &lastToNew_out, int coarsestLvl,
-    Vec5 minResForAbort) {
+    Eigen::Matrix<double, 4, 4> &lastToNew_out, Mat66 &H_pose,
+    Vec5 &lastResiduals, int lastInners[5], int coarsestLvl) {
   int maxIterations[] = {10, 20, 50, 50, 50};
   float lambdaExtrapolationLimit = 0.001;
 
@@ -302,7 +311,6 @@ bool PoseEstimator::estimate(
   setPointsRef(pts);
 
   lastResiduals.setConstant(NAN);
-  lastFlowIndicators.setConstant(1000);
 
   newFrame = newFrameHessian;
   AffLight aff_g2l_current = newFrame->aff_g2l();
@@ -315,6 +323,7 @@ bool PoseEstimator::estimate(
 
   bool haveRepeated = false;
 
+  Mat88 H_current;
   for (int lvl = coarsestLvl; lvl >= 0; lvl--) {
     Mat88 H;
     Vec8 b;
@@ -422,6 +431,7 @@ bool PoseEstimator::estimate(
       }
       if (accept) {
         calcGSSSE(lvl, H, b, refToNew_new, aff_g2l_new);
+        H_current = H;
         resOld = resNew;
         aff_g2l_current = aff_g2l_new;
         refToNew_current = refToNew_new;
@@ -441,9 +451,7 @@ bool PoseEstimator::estimate(
 
     // set last residual for that level, as well as flow indicators.
     lastResiduals[lvl] = sqrtf((float)(resOld[0] / resOld[1]));
-    lastFlowIndicators = resOld.segment<3>(2);
-    if (lastResiduals[lvl] > 1.5 * minResForAbort[lvl])
-      return false;
+    lastInners[lvl] = resOld[1];
 
     if (levelCutoffRepeat > 1 && !haveRepeated) {
       lvl++;
@@ -454,8 +462,7 @@ bool PoseEstimator::estimate(
 
   // set!
   lastToNew_out = refToNew_current.matrix();
-
-  return true;
+  H_pose = H_current.topLeftCorner<6, 6>();
 }
 
 } // namespace dso

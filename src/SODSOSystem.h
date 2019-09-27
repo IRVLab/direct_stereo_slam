@@ -45,6 +45,7 @@
 #include <math.h>
 #include <queue>
 
+#include "loop_closure/SODSOLoopHandler.h"
 #include "scale_optimization/ScaleOptimizer.h"
 
 namespace dso {
@@ -259,6 +260,8 @@ private:
   float init_scale;
   bool scale_opt_trapped;
   void optimize_scale();
+
+  SODSOLoopHandler *sodsoLoopHandler;
 
   std::vector<std::pair<int, float>> pts_optTime;
   std::vector<float> scaleOptTime;

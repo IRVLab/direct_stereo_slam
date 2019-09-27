@@ -18,11 +18,11 @@ public:
   PoseEstimator(int w, int h);
   ~PoseEstimator();
 
-  bool estimate(const std::vector<std::pair<Eigen::Vector3d, float>> &pts,
+  void estimate(const std::vector<std::pair<Eigen::Vector3d, float>> &pts,
                 const std::pair<AffLight, float> &affLightExposure,
                 FrameHessian *newFrameHessian, CalibHessian *HCalib,
-                Eigen::Matrix<double, 4, 4> &lastToNew_out, int coarsestLvl = 3,
-                Vec5 minResForAbort = Vec5::Constant(NAN));
+                Eigen::Matrix<double, 4, 4> &lastToNew_out, Mat66 &H_pose,
+                Vec5 &lastResiduals, int lastInners[5], int coarsestLvl);
 
 private:
   void makeK(CalibHessian *HCalib);
@@ -55,10 +55,6 @@ private:
   AffLight lastRef_aff_g2l;
   float lastRef_ab_exposure;
   FrameHessian *newFrame;
-
-  // act as pure ouptut
-  Vec5 lastResiduals;
-  Vec3 lastFlowIndicators;
 
   // pc buffers
   Eigen::MatrixXf pointxyzi;
