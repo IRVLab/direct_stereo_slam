@@ -8,7 +8,7 @@
 sig_atomic_t stopFlag = 0; // sigint flag
 std::vector<std::vector<double>> gps_data;
 
-void chatterCallback(const geometry_msgs::TransformStamped::ConstPtr &msg) {
+void gpsCallback(const geometry_msgs::TransformStamped::ConstPtr &msg) {
   gps_data.push_back({msg->transform.translation.x,
                       msg->transform.translation.y,
                       msg->transform.translation.z});
@@ -21,7 +21,7 @@ int main(int argc, char **argv) {
   ros::NodeHandle n;
 
   gps_data.clear();
-  ros::Subscriber sub = n.subscribe("gps", 1000, chatterCallback);
+  ros::Subscriber sub = n.subscribe("gps", 1000, gpsCallback);
 
   signal(SIGINT, finishHandler);
   ros::Rate r(10); // 10 hz

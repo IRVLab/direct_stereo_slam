@@ -19,7 +19,7 @@ public:
   ~PoseEstimator();
 
   void estimate(const std::vector<std::pair<Eigen::Vector3d, float>> &pts,
-                const std::pair<AffLight, float> &affLightExposure,
+                const std::pair<AffLight, float> &lastAffLightExposure,
                 FrameHessian *newFrameHessian, CalibHessian *HCalib,
                 Eigen::Matrix<double, 4, 4> &lastToNew_out, Mat66 &H_pose,
                 Vec5 &lastResiduals, int lastInners[5], int coarsestLvl);

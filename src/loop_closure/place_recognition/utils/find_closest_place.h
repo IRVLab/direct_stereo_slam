@@ -30,18 +30,19 @@ inline void find_closest_place(Eigen::VectorXd &signature_structure,
                                const Eigen::MatrixXd &signatures_structure,
                                const Eigen::MatrixXd &signatures_intensity,
                                int loop_margin, int sc_height, int sc_width,
-                               int &idx, int &yaw_reverse, double &difference) {
+                               int &idx, double &yaw, bool &reverse,
+                               double &difference) {
   Eigen::MatrixXd differece_matrix_yaw(2 * sc_width,
                                        signatures_structure.rows());
   for (int yaw = 0; yaw < sc_width; yaw++) {
-    for (int reverse = 0; reverse < 2; reverse++) {
+    for (int rev = 0; rev < 2; rev++) {
       // Get individual differece vectors
       Eigen::VectorXd differece_structure =
           getDifferenceByYaw(signature_structure, signatures_structure,
-                             sc_height, sc_width, yaw, reverse);
+                             sc_height, sc_width, yaw, rev);
       Eigen::VectorXd differece_intensity =
           getDifferenceByYaw(signature_intensity, signatures_intensity,
-                             sc_height, sc_width, yaw, reverse);
+                             sc_height, sc_width, yaw, rev);
 
       // Fush two difference vectors
       Eigen::VectorXd differece_ones =
@@ -62,10 +63,13 @@ inline void find_closest_place(Eigen::VectorXd &signature_structure,
       differece_fused.tail(loop_margin) =
           9999.9 * Eigen::VectorXd::Ones(loop_margin); // Block nearby places
 
-      differece_matrix_yaw.row(2 * yaw + reverse) = differece_fused.transpose();
+      differece_matrix_yaw.row(2 * yaw + rev) = differece_fused.transpose();
     }
   }
 
   // Find the closest place
+  int yaw_reverse;
   difference = differece_matrix_yaw.minCoeff(&yaw_reverse, &idx);
+  reverse = yaw_reverse - (yaw_reverse / 2) * 2;
+  yaw = double(yaw_reverse / 2) / sc_width * (2 * M_PI);
 }

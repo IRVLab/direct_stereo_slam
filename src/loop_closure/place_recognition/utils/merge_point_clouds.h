@@ -28,7 +28,9 @@ inline pcl::PointCloud<pcl::PointXYZRGB>::Ptr merge_point_clouds(
     cloud.points[c_idx].x = pt_query[0];
     cloud.points[c_idx].y = pt_query[1];
     cloud.points[c_idx].z = pt_query[2];
+    cloud.points[c_idx].r = 255;
     cloud.points[c_idx].g = 255;
+    cloud.points[c_idx].b = 255;
     c_idx++;
   }
   for (const auto &pt : pts_matched) {
@@ -39,7 +41,7 @@ inline pcl::PointCloud<pcl::PointXYZRGB>::Ptr merge_point_clouds(
     cloud.points[c_idx].x = pt_query[0];
     cloud.points[c_idx].y = pt_query[1];
     cloud.points[c_idx].z = pt_query[2];
-    cloud.points[c_idx].b = 255;
+    cloud.points[c_idx].g = 255;
     c_idx++;
   }
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_ptr =

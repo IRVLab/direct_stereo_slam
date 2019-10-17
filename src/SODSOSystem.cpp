@@ -316,7 +316,7 @@ Vec4 SODSOSystem::trackNewCoarse(FrameHessian *fh) {
     // if they don't work they will only be tried on the coarsest level, which
     // is super fast anyway. also, if tracking rails here we loose, so we
     // really, really want to avoid that.
-    for (float rotDelta = 0.02; rotDelta < 0.05; rotDelta++) {
+    for (float rotDelta = 0.02; rotDelta < 0.05; rotDelta += 0.01) {
       lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
                                  SE3(Sophus::Quaterniond(1, rotDelta, 0, 0),
                                      Vec3(0, 0, 0))); // assume constant motion.

@@ -107,16 +107,16 @@ void PoseEstimator::calcGSSSE(int lvl, Mat88 &H_out, Vec8 &b_out,
   H_out = acc.H.topLeftCorner<8, 8>().cast<double>() * (1.0f / n);
   b_out = acc.H.topRightCorner<8, 1>().cast<double>() * (1.0f / n);
 
-  H_out.block<8, 3>(0, 0) *= SCALE_XI_ROT;
-  H_out.block<8, 3>(0, 3) *= SCALE_XI_TRANS;
+  H_out.block<8, 3>(0, 0) *= SCALE_XI_TRANS;
+  H_out.block<8, 3>(0, 3) *= SCALE_XI_ROT;
   H_out.block<8, 1>(0, 6) *= SCALE_A;
   H_out.block<8, 1>(0, 7) *= SCALE_B;
-  H_out.block<3, 8>(0, 0) *= SCALE_XI_ROT;
-  H_out.block<3, 8>(3, 0) *= SCALE_XI_TRANS;
+  H_out.block<3, 8>(0, 0) *= SCALE_XI_TRANS;
+  H_out.block<3, 8>(3, 0) *= SCALE_XI_ROT;
   H_out.block<1, 8>(6, 0) *= SCALE_A;
   H_out.block<1, 8>(7, 0) *= SCALE_B;
-  b_out.segment<3>(0) *= SCALE_XI_ROT;
-  b_out.segment<3>(3) *= SCALE_XI_TRANS;
+  b_out.segment<3>(0) *= SCALE_XI_TRANS;
+  b_out.segment<3>(3) *= SCALE_XI_ROT;
   b_out.segment<1>(6) *= SCALE_A;
   b_out.segment<1>(7) *= SCALE_B;
 }
@@ -298,7 +298,7 @@ void PoseEstimator::setPointsRef(
 
 void PoseEstimator::estimate(
     const std::vector<std::pair<Eigen::Vector3d, float>> &pts,
-    const std::pair<AffLight, float> &affLightExposure,
+    const std::pair<AffLight, float> &lastAffLightExposure,
     FrameHessian *newFrameHessian, CalibHessian *HCalib,
     Eigen::Matrix<double, 4, 4> &lastToNew_out, Mat66 &H_pose,
     Vec5 &lastResiduals, int lastInners[5], int coarsestLvl) {
@@ -318,8 +318,8 @@ void PoseEstimator::estimate(
   Sophus::SE3 refToNew_current(lastToNew_out.block<3, 3>(0, 0),
                                lastToNew_out.block<3, 1>(0, 3));
 
-  lastRef_aff_g2l = affLightExposure.first;
-  lastRef_ab_exposure = affLightExposure.second;
+  lastRef_aff_g2l = lastAffLightExposure.first;
+  lastRef_ab_exposure = lastAffLightExposure.second;
 
   bool haveRepeated = false;
 
@@ -395,8 +395,8 @@ void PoseEstimator::estimate(
       inc *= extrapFac;
 
       Vec8 incScaled = inc;
-      incScaled.segment<3>(0) *= SCALE_XI_ROT;
-      incScaled.segment<3>(3) *= SCALE_XI_TRANS;
+      incScaled.segment<3>(0) *= SCALE_XI_TRANS;
+      incScaled.segment<3>(3) *= SCALE_XI_ROT;
       incScaled.segment<1>(6) *= SCALE_A;
       incScaled.segment<1>(7) *= SCALE_B;
 
@@ -463,6 +463,10 @@ void PoseEstimator::estimate(
   // set!
   lastToNew_out = refToNew_current.matrix();
   H_pose = H_current.topLeftCorner<6, 6>();
+  H_pose.block<6, 3>(0, 0) /= SCALE_XI_TRANS;
+  H_pose.block<6, 3>(0, 3) /= SCALE_XI_ROT;
+  H_pose.block<3, 6>(0, 0) /= SCALE_XI_TRANS;
+  H_pose.block<3, 6>(3, 0) /= SCALE_XI_ROT;
 }
 
 } // namespace dso

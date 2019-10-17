@@ -9,12 +9,20 @@
 #include "loop_closure/place_recognition/utils/PosesPts.h"
 #include "loop_closure/pose_estimation/PoseEstimator.h"
 
+#include <g2o/core/block_solver.h>
+#include <g2o/core/optimization_algorithm_levenberg.h>
+#include <g2o/core/robust_kernel_impl.h>
+#include <g2o/solvers/eigen/linear_solver_eigen.h>
+#include <g2o/types/slam3d/types_slam3d.h>
+
 #define COMPARE_PCL true
 
 #if COMPARE_PCL
 #include "loop_closure/place_recognition/utils/merge_point_clouds.h"
 #include <pcl/visualization/cloud_viewer.h>
 #endif
+
+#include <string>
 
 namespace dso {
 
@@ -50,6 +58,8 @@ private:
 #if COMPARE_PCL
   pcl::visualization::CloudViewer *pcl_viewer;
 #endif
+
+  g2o::SparseOptimizer optimizer;
 
 public:
   SODSOLoopHandler();

@@ -1,11 +1,13 @@
-cmake_minimum_required(VERSION 2.4.6)
+cmake_minimum_required(VERSION 2.8.3)
 project(direct_stereo_slam)
 
-set(BUILD_TYPE Release)
+set( CMAKE_BUILD_TYPE Release )
 
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(PCL 1.0 REQUIRED)
+find_package(g2o REQUIRED )
+
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
   roscpp
@@ -34,11 +36,7 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
-add_definitions("-DENABLE_SSE")
-set(CMAKE_CXX_FLAGS
-   "${SSE_FLAGS} -O3 -g -std=c++0x -march=native"
-#   "${SSE_FLAGS} -O3 -g -std=c++0x -fno-omit-frame-pointer"
-)
+set(CMAKE_CXX_FLAGS "-march=native")
 
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
@@ -77,4 +75,5 @@ target_link_libraries(so_dso_node
     ${Pangolin_LIBRARIES}
     ${OpenCV_LIBS}
     ${PCL_LIBRARIES}
-    ${catkin_LIBRARIES})
+    ${catkin_LIBRARIES}
+    g2o_core g2o_types_slam3d g2o_solver_eigen g2o_stuff)

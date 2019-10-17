@@ -4,6 +4,8 @@
 #include "loop_closure/place_recognition/utils/find_closest_place.h"
 #include "loop_closure/place_recognition/utils/get_transformation.h"
 
+#include <fstream>
+
 #define LOOP_MARGIN 50
 
 bool PoseCompare(const IDPose *l, const IDPose *r) {
@@ -15,6 +17,32 @@ bool PtCompare(const IDPtIntensity *l, const IDPtIntensity *r) {
 }
 
 namespace dso {
+
+/** conversion code from Euler angles */
+Eigen::Matrix<double, 6, 6, Eigen::ColMajor> hessian_quat_from_euler(
+    Eigen::Matrix<double, 6, 6, Eigen::ColMajor> &Hess_euler,
+    const g2o::Isometry3 &t) {
+  double delta = 1e-6;
+  double idelta = 1 / (2 * delta);
+
+  Eigen::Matrix<double, 7, 1> t0 = g2o::internal::toVectorQT(t);
+  Eigen::Matrix<double, 7, 1> ta = t0;
+  Eigen::Matrix<double, 7, 1> tb = t0;
+
+  Eigen::Matrix<double, 6, 6, Eigen::ColMajor> Jac;
+  for (int i = 0; i < 6; i++) {
+    ta = tb = t0;
+    ta[i] -= delta;
+    tb[i] += delta;
+    Eigen::Matrix<double, 6, 1> ea =
+        g2o::internal::toVectorET(g2o::internal::fromVectorQT(ta));
+    Eigen::Matrix<double, 6, 1> eb =
+        g2o::internal::toVectorET(g2o::internal::fromVectorQT(tb));
+    Jac.col(i) = (eb - ea) * idelta;
+  }
+
+  return Jac.transpose() * Hess_euler * Jac;
+}
 
 SODSOLoopHandler::SODSOLoopHandler()
     : previous_incoming_id(-1), pts_idx(0), lidarRange(45.0), voxelAngle(1.0),
@@ -29,8 +57,18 @@ SODSOLoopHandler::SODSOLoopHandler()
 
 #if COMPARE_PCL
   pcl_viewer = new pcl::visualization::CloudViewer(
-      "R: query; G: matched; B: matched transferred");
+      "R: query; W: matched; G: matched transferred");
 #endif
+
+  // Setup optimizer
+  std::unique_ptr<g2o::BlockSolver_6_3::LinearSolverType> linearSolver;
+  linearSolver = g2o::make_unique<
+      g2o::LinearSolverEigen<g2o::BlockSolver_6_3::PoseMatrixType>>();
+  g2o::OptimizationAlgorithmLevenberg *algorithm =
+      new g2o::OptimizationAlgorithmLevenberg(
+          g2o::make_unique<g2o::BlockSolver_6_3>(std::move(linearSolver)));
+  optimizer.setAlgorithm(algorithm);
+  optimizer.setVerbose(true);
 }
 
 SODSOLoopHandler::SODSOLoopHandler(double lr, double va) {
@@ -51,19 +89,55 @@ SODSOLoopHandler::~SODSOLoopHandler() {
   delete pose_estimator;
 
   delete pcl_viewer;
+
+  g2o::VertexSE3 *vlast =
+      (g2o::VertexSE3 *)optimizer.vertex(previous_incoming_id);
+  vlast->setFixed(true);
+  optimizer.save("pose_graph.g2o");
+  optimizer.initializeOptimization();
+  optimizer.computeActiveErrors();
+  optimizer.computeInitialGuess();
+  optimizer.optimize(20);
+  optimizer.save("pose_graph_optimized.g2o");
+  std::cout << "Saved!" << std::endl;
 }
 
 void SODSOLoopHandler::addKeyFrame(FrameHessian *fh, CalibHessian *HCalib,
                                    Mat66 poseHessian) {
-  float fx = HCalib->fxl();
-  float fy = HCalib->fyl();
-  float cx = HCalib->cxl();
-  float cy = HCalib->cyl();
-
   // keep incoming id increasing
   if (previous_incoming_id > fh->shell->incoming_id) {
     return;
   }
+
+  // Add new vertex to pose graph
+  g2o::VertexSE3 *vfh = new g2o::VertexSE3();
+  SE3 fh_wc = fh->shell->camToWorld;
+  vfh->setEstimate(g2o::SE3Quat(fh_wc.rotationMatrix(), fh_wc.translation()));
+  vfh->setId(fh->shell->incoming_id);
+  optimizer.addVertex(vfh);
+
+  // Connection to previous keyframe
+  if (previous_incoming_id >= 0 && !pts_spherical_history.empty()) {
+    g2o::VertexSE3 *vfh_prv =
+        (g2o::VertexSE3 *)optimizer.vertex(previous_incoming_id);
+    g2o::EdgeSE3 *edgeToPrv = new g2o::EdgeSE3();
+    edgeToPrv->setVertex(0, vfh_prv);
+    edgeToPrv->setVertex(1, vfh);
+    edgeToPrv->setMeasurementFromState();
+    // poseHessian.setIdentity();
+    edgeToPrv->setInformation(
+        hessian_quat_from_euler(poseHessian, edgeToPrv->measurement()));
+    edgeToPrv->setRobustKernel(new g2o::RobustKernelHuber());
+    optimizer.addEdge(edgeToPrv);
+  }
+
+  previous_incoming_id = fh->shell->incoming_id;
+
+  // Loop closure
+  float fx = HCalib->fxl();
+  float fy = HCalib->fyl();
+  float cx = HCalib->cxl();
+  float cy = HCalib->cyl();
 
   //============= Download poses and points =======================
   for (PointHessian *p : fh->pointHessiansMarginalized) {
@@ -81,8 +155,6 @@ void SODSOLoopHandler::addKeyFrame(FrameHessian *fh, CalibHessian *HCalib,
   }
   poses_history.push_back(new IDPose(
       fh->shell->incoming_id, fh->shell->camToWorld.inverse().matrix3x4()));
-
-  previous_incoming_id = fh->shell->incoming_id;
 
   //============= Preprocess points to have sphereical shape ==============
   std::vector<std::pair<Eigen::Vector3d, float>> pts_spherical;
@@ -105,44 +177,58 @@ void SODSOLoopHandler::addKeyFrame(FrameHessian *fh, CalibHessian *HCalib,
 
   //============= Find the closest place in history =======================
   if (signature_count > LOOP_MARGIN) {
-    int idx, yaw_reverse;
-    double difference;
+    int idx;
+    double difference, yaw;
+    bool reverse;
     find_closest_place(signature_structure, signature_intensity,
                        signatures_structure.block(0, 0, signature_count,
                                                   signatures_structure.cols()),
                        signatures_intensity.block(0, 0, signature_count,
                                                   signatures_intensity.cols()),
                        LOOP_MARGIN, sc_ptr->getHeight(), sc_ptr->getWidth(),
-                       idx, yaw_reverse, difference);
+                       idx, yaw, reverse, difference);
     if (difference < -5) {
       // Calculate T_query_matched
       Eigen::Matrix<double, 4, 4> T_query_matched = get_transformation(
-          T_pca_rig, Ts_pca_rig, idx, yaw_reverse, sc_ptr->getWidth());
-      std::cout << poses_history.back()->incoming_id << "  " << ids(idx) << " "
-                << difference << std::endl;
-      auto T_query_matched_optimizted = T_query_matched;
-      Mat66 Hessian;
+          T_pca_rig, Ts_pca_rig.block<4, 4>(4 * idx, 0), yaw, reverse);
+      auto T_query_matched_optimized = T_query_matched;
+      Mat66 poseHessianLoop;
       Vec5 lastResiduals;
       int lastInners[5];
       pose_estimator->estimate(pts_spherical_history[idx],
                                affLightExposures[idx], fh, HCalib,
-                               T_query_matched_optimizted, Hessian,
+                               T_query_matched_optimized, poseHessianLoop,
                                lastResiduals, lastInners, pyrLevelsUsed - 1);
-      std::cout << "lastInners[0] " << lastInners[0] << std::endl;
-      std::cout << "lastResiduals[0] " << lastResiduals[0] << std::endl;
-      std::cout << "PoseHessian " << std::log10(poseHessian.determinant())
-                << std::endl;
-      std::cout << "Hessian " << std::log10(Hessian.determinant()) << std::endl;
-
-      if (lastInners[0] > 300 && lastResiduals[0] < 12 &&
-          std::log10(Hessian.determinant()) > 30) {
+      // std::cout << "T_query_matched " << std::endl
+      //           << T_query_matched << std::endl;
+      // std::cout << "T_query_matched_optimized " << std::endl
+      //           << T_query_matched_optimized << std::endl;
+      std::cout << "lastResiduals " << lastResiduals[0] << " * "
+                << lastInners[0] << std::endl;
 #if COMPARE_PCL
-        auto cloud_ptr =
-            merge_point_clouds(pts_spherical, pts_spherical_history[idx],
-                               T_query_matched, T_query_matched_optimizted);
-        pcl_viewer->showCloud(cloud_ptr);
-        IOWrap::waitKey(0);
+      auto cloud_ptr =
+          merge_point_clouds(pts_spherical, pts_spherical_history[idx],
+                             T_query_matched, T_query_matched_optimized);
+      pcl_viewer->showCloud(cloud_ptr);
+      IOWrap::waitKey(0);
 #endif
+
+      if (lastInners[0] > 300 && lastResiduals[0] < 12) {
+        std::cout << "Adding loop constraint" << std::endl;
+        // Connection to detected loop closure keyframe
+        g2o::VertexSE3 *vfh_loop = (g2o::VertexSE3 *)optimizer.vertex(ids(idx));
+        g2o::EdgeSE3 *edgeFromLoop = new g2o::EdgeSE3();
+        edgeFromLoop->setVertex(0, vfh_loop);
+        edgeFromLoop->setVertex(1, vfh);
+        // T_query_matched_optimized.setIdentity();
+        edgeFromLoop->setMeasurement(
+            g2o::SE3Quat(T_query_matched_optimized.block<3, 3>(0, 0),
+                         T_query_matched_optimized.block<3, 1>(0, 3)));
+        // poseHessianLoop.setIdentity();
+        edgeFromLoop->setInformation(hessian_quat_from_euler(
+            poseHessianLoop, edgeFromLoop->measurement()));
+        edgeFromLoop->setRobustKernel(new g2o::RobustKernelHuber());
+        optimizer.addEdge(edgeFromLoop);
       }
     }
   }
@@ -157,7 +243,7 @@ void SODSOLoopHandler::addKeyFrame(FrameHessian *fh, CalibHessian *HCalib,
     Ts_pca_rig.conservativeResize(Ts_pca_rig.rows() + 4 * 500,
                                   Ts_pca_rig.cols());
   }
-  ids(signature_count) = poses_history.back()->incoming_id;
+  ids(signature_count) = fh->shell->incoming_id;
   signatures_structure.row(signature_count) = signature_structure.transpose();
   signatures_intensity.row(signature_count) = signature_intensity.transpose();
   Ts_pca_rig.block<4, 4>(4 * signature_count, 0) = T_pca_rig;
