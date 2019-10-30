@@ -8,6 +8,8 @@
     <param name="calib0" value="$(find direct_stereo_slam)/cams/kitti/04_10/camera0.txt" />
     <param name="calib1" value="$(find direct_stereo_slam)/cams/kitti/04_10/camera1.txt" />
     <param name="init_scale" value="20.0" />
+    <param name="lidar_range" value="45.0" />
+    <param name="voxel_angle" value="1.0" />
     <param name="mode" value="1" />
     <param name="preset" value="2" />
   </node>

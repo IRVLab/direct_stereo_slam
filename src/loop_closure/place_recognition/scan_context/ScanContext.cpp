@@ -14,8 +14,8 @@ unsigned int ScanContext::getSignatureSize() { return numS * numR; }
 
 void ScanContext::getSignature(
     const std::vector<std::pair<Eigen::Vector3d, float>> &pts_clr,
-    Eigen::VectorXd &structure_output, Eigen::VectorXd &intensity_output,
-    double max_rho) {
+    Eigen::VectorXd &ringkey, Eigen::VectorXd &structure_output,
+    Eigen::VectorXd &intensity_output, double max_rho) {
   if (max_rho < 0) {
     for (auto &pc : pts_clr) {
       double curRho = pc.first.norm();
@@ -23,6 +23,9 @@ void ScanContext::getSignature(
         max_rho = curRho;
     }
   }
+
+  // ringkey
+  ringkey = Eigen::VectorXd::Zero(numR);
 
   // signature matrix A
   Eigen::VectorXd pts_count = Eigen::VectorXd::Zero(numS * numR); // pts count
@@ -55,6 +58,8 @@ void ScanContext::getSignature(
     if (ri >= numR)
       continue;
 
+    ringkey(ri)++;
+
     if (pts_count(si * numR + ri) == 0) {
       pts_intensity(si * numR + ri) = pts_clr[i].second;
       height_lowest(si * numR + ri) = pts_clr[i].first(0);
@@ -69,6 +74,12 @@ void ScanContext::getSignature(
 
     pts_count(si * numR + ri)++;
   }
+
+  // occupancy ratio
+  for (int i = 0; i < numR; i++) {
+    ringkey(i) /= numS;
+  }
+  ringkey /= ringkey.norm();
 
   // average intensity
   float ave_intensity = 0;
@@ -86,5 +97,6 @@ void ScanContext::getSignature(
   }
 
   structure_output = height_highest - height_lowest; // height difference
-  intensity_output = pts_intensity;
+  structure_output = structure_output / structure_output.norm(),
+  intensity_output = pts_intensity / pts_intensity.norm();
 }

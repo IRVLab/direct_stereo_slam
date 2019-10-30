@@ -50,7 +50,8 @@ ScaleOptimizer::ScaleOptimizer(int w_, int h_, const Eigen::Matrix3f &K,
 
   newFrame = 0;
   lastRef = 0;
-  debugPlot = debugPrint = true;
+  debugPlot = false;
+  debugPrint = false;
   w[0] = h[0] = 0;
   refFrameID = -1;
 
@@ -106,10 +107,6 @@ ScaleOptimizer::~ScaleOptimizer() {
 bool ScaleOptimizer::optimize(FrameHessian *newFrameHessian, float &scale,
                               int coarsestLvl, Vec5 minResForAbort,
                               IOWrap::Output3DWrapper *wrap) {
-  debugPlot = setting_render_displayCoarseTrackingFull;
-  // debugPlot = true;
-  debugPrint = false;
-
   assert(coarsestLvl < 5 && coarsestLvl < pyrLevelsUsed);
 
   lastResiduals.setConstant(NAN);

@@ -300,8 +300,9 @@ void PoseEstimator::estimate(
     const std::vector<std::pair<Eigen::Vector3d, float>> &pts,
     const std::pair<AffLight, float> &lastAffLightExposure,
     FrameHessian *newFrameHessian, CalibHessian *HCalib,
-    Eigen::Matrix<double, 4, 4> &lastToNew_out, Mat66 &H_pose,
-    Vec5 &lastResiduals, int lastInners[5], int coarsestLvl) {
+    Eigen::Matrix<double, 4, 4> &lastToNew_out, Mat66 &H_pose_init,
+    Mat66 &H_pose_last, Vec5 &lastResiduals, Vec5 &lastInners,
+    int coarsestLvl) {
   int maxIterations[] = {10, 20, 50, 50, 50};
   float lambdaExtrapolationLimit = 0.001;
 
@@ -341,6 +342,13 @@ void PoseEstimator::estimate(
     }
 
     calcGSSSE(lvl, H, b, refToNew_current, aff_g2l_current);
+    if (lvl == coarsestLvl) {
+      H_pose_init = H.topLeftCorner<6, 6>();
+      H_pose_init.block<6, 3>(0, 0) /= SCALE_XI_TRANS;
+      H_pose_init.block<6, 3>(0, 3) /= SCALE_XI_ROT;
+      H_pose_init.block<3, 6>(0, 0) /= SCALE_XI_TRANS;
+      H_pose_init.block<3, 6>(3, 0) /= SCALE_XI_ROT;
+    }
 
     float lambda = 0.01;
 
@@ -451,7 +459,7 @@ void PoseEstimator::estimate(
 
     // set last residual for that level, as well as flow indicators.
     lastResiduals[lvl] = sqrtf((float)(resOld[0] / resOld[1]));
-    lastInners[lvl] = resOld[1];
+    lastInners[lvl] = 1 - resOld[5];
 
     if (levelCutoffRepeat > 1 && !haveRepeated) {
       lvl++;
@@ -462,11 +470,11 @@ void PoseEstimator::estimate(
 
   // set!
   lastToNew_out = refToNew_current.matrix();
-  H_pose = H_current.topLeftCorner<6, 6>();
-  H_pose.block<6, 3>(0, 0) /= SCALE_XI_TRANS;
-  H_pose.block<6, 3>(0, 3) /= SCALE_XI_ROT;
-  H_pose.block<3, 6>(0, 0) /= SCALE_XI_TRANS;
-  H_pose.block<3, 6>(3, 0) /= SCALE_XI_ROT;
+  H_pose_last = H_current.topLeftCorner<6, 6>();
+  H_pose_last.block<6, 3>(0, 0) /= SCALE_XI_TRANS;
+  H_pose_last.block<6, 3>(0, 3) /= SCALE_XI_ROT;
+  H_pose_last.block<3, 6>(0, 0) /= SCALE_XI_TRANS;
+  H_pose_last.block<3, 6>(3, 0) /= SCALE_XI_ROT;
 }
 
 } // namespace dso

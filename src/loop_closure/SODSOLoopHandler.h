@@ -15,12 +15,7 @@
 #include <g2o/solvers/eigen/linear_solver_eigen.h>
 #include <g2o/types/slam3d/types_slam3d.h>
 
-#define COMPARE_PCL true
-
-#if COMPARE_PCL
-#include "loop_closure/place_recognition/utils/merge_point_clouds.h"
 #include <pcl/visualization/cloud_viewer.h>
-#endif
 
 #include <string>
 
@@ -38,11 +33,12 @@ private:
   int previous_incoming_id;
   int pts_idx;
 
-  double lidarRange;
-  double voxelAngle;
+  float lidarRange;
+  float voxelAngle;
 
   ScanContext *sc_ptr;
   Eigen::VectorXi ids;
+  Eigen::MatrixXd ring_keys;
   Eigen::MatrixXd signatures_structure;
   Eigen::MatrixXd signatures_intensity;
   int signature_count;
@@ -55,15 +51,13 @@ private:
   PoseEstimator *pose_estimator;
   std::vector<std::pair<AffLight, float>> affLightExposures;
 
-#if COMPARE_PCL
   pcl::visualization::CloudViewer *pcl_viewer;
-#endif
 
   g2o::SparseOptimizer optimizer;
 
 public:
   SODSOLoopHandler();
-  SODSOLoopHandler(double lr, double va);
+  SODSOLoopHandler(float lr, float va);
   ~SODSOLoopHandler();
 
   void addKeyFrame(FrameHessian *fh, CalibHessian *HCalib, Mat66 poseHessian);

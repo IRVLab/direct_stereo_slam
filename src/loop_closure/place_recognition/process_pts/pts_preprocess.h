@@ -19,7 +19,7 @@ inline void
 get_pts_spherical(const IDPose *cur_pose,
                   std::vector<IDPtIntensity *> &pts_nearby,
                   std::vector<std::pair<Eigen::Vector3d, float>> &pts_spherical,
-                  double lidarRange, double voxelAngle) {
+                  float lidarRange, float voxelAngle) {
   std::vector<IDPtIntensity *> new_pts_nearby, pts_spherical_raw;
   for (auto &p : pts_nearby) {
     Eigen::Vector4d p_g(p->pt(0), p->pt(1), p->pt(2), 1.0);

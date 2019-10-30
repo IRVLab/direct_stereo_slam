@@ -70,8 +70,8 @@ public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   SODSOSystem();
   SODSOSystem(int w, int h, const Eigen::Matrix3f &K, const SE3 &T_stereo,
-              Undistort *undistorter_, float init_scale_,
-              float scale_accept_th);
+              Undistort *undistorter_, float init_scale_, float scale_accept_th,
+              float lidarRange, float voxelAngle);
   virtual ~SODSOSystem();
 
   void addStereoImg(cv::Mat stereo_img, int stereo_id);

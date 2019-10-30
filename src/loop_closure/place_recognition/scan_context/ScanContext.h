@@ -15,7 +15,7 @@ public:
 
   void
   getSignature(const std::vector<std::pair<Eigen::Vector3d, float>> &pts_clr,
-               Eigen::VectorXd &structure_output,
+               Eigen::VectorXd &ringkey, Eigen::VectorXd &structure_output,
                Eigen::VectorXd &intensity_output, double max_rho = -1.0);
 
 private:

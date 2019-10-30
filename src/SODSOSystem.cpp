@@ -141,14 +141,15 @@ SODSOSystem::SODSOSystem() {
 
 SODSOSystem::SODSOSystem(int w, int h, const Eigen::Matrix3f &K,
                          const SE3 &T_stereo, Undistort *undistorter_,
-                         float init_scale_, float scale_accept_th)
+                         float init_scale_, float scale_accept_th,
+                         float lidarRange, float voxelAngle)
     : SODSOSystem() {
   undistorter = undistorter_;
   init_scale = init_scale_;
   scale_opt_trapped = false;
   scaleOptimizer = new ScaleOptimizer(w, h, K, T_stereo, scale_accept_th);
   if (setting_enableLoop) {
-    sodsoLoopHandler = new SODSOLoopHandler();
+    sodsoLoopHandler = new SODSOLoopHandler(lidarRange, voxelAngle);
   }
 }
 

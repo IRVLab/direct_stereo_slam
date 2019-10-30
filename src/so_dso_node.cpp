@@ -58,6 +58,9 @@ private:
   Undistort *undistorter1;
   int frameID;
 
+  float lidarRange;
+  float voxelAngle;
+
   float playbackSpeed =
       0; // 0 for linearize (play as fast as possible, while sequentializing
          // tracking & mapping). otherwise, factor on timestamps.
@@ -141,6 +144,8 @@ SODSONode::SODSONode() {
 
   nhPriv.param("init_scale", init_scale, 1.0f);
   nhPriv.param("scale_accept_th", scale_accept_th, 15.0f);
+  nhPriv.param("lidar_range", lidarRange, 45.0f);
+  nhPriv.param("voxel_angle", voxelAngle, 1.0f);
 
   bool nomt;
   int preset, mode;
@@ -155,6 +160,7 @@ SODSONode::SODSONode() {
   nhPriv.param("nolog", setting_logStuff, true);
   nhPriv.param("nogui", disableAllDisplay, false);
   nhPriv.param("nomt", nomt, false);
+
   multiThreading = !nomt;
   settingsDefault(preset);
   if (mode == 0) {
@@ -181,10 +187,10 @@ SODSONode::SODSONode() {
                  (int)undistorter0->getSize()[1],
                  undistorter0->getK().cast<float>());
 
-  so_dso_System = new SODSOSystem((int)undistorter1->getSize()[0],
-                                  (int)undistorter1->getSize()[1],
-                                  undistorter1->getK().cast<float>(), T_stereo_,
-                                  undistorter1, init_scale, scale_accept_th);
+  so_dso_System = new SODSOSystem(
+      (int)undistorter1->getSize()[0], (int)undistorter1->getSize()[1],
+      undistorter1->getK().cast<float>(), T_stereo_, undistorter1, init_scale,
+      scale_accept_th, lidarRange, voxelAngle);
   so_dso_System->linearizeOperation = (playbackSpeed == 0);
 
   if (!disableAllDisplay)
@@ -279,7 +285,7 @@ void SODSONode::imageMessageCallback(const sensor_msgs::ImageConstPtr &msg0,
     so_dso_System = new SODSOSystem(
         (int)undistorter1->getSize()[0], (int)undistorter1->getSize()[1],
         undistorter1->getK().cast<float>(), T_stereo_, undistorter1, init_scale,
-        scale_accept_th);
+        scale_accept_th, lidarRange, voxelAngle);
     so_dso_System->linearizeOperation = (playbackSpeed == 0);
     so_dso_System->outputWrapper = wraps;
     if (undistorter0->photometricUndist != 0)

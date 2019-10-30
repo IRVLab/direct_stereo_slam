@@ -21,21 +21,18 @@ public:
   void estimate(const std::vector<std::pair<Eigen::Vector3d, float>> &pts,
                 const std::pair<AffLight, float> &lastAffLightExposure,
                 FrameHessian *newFrameHessian, CalibHessian *HCalib,
-                Eigen::Matrix<double, 4, 4> &lastToNew_out, Mat66 &H_pose,
-                Vec5 &lastResiduals, int lastInners[5], int coarsestLvl);
+                Eigen::Matrix<double, 4, 4> &lastToNew_out, Mat66 &H_pose_init,
+                Mat66 &H_pose_last, Vec5 &lastResiduals, Vec5 &lastInners,
+                int coarsestLvl);
 
 private:
   void makeK(CalibHessian *HCalib);
 
   void setPointsRef(const std::vector<std::pair<Eigen::Vector3d, float>> &pts);
 
-  Vec6 calcResAndGS(int lvl, Mat88 &H_out, Vec8 &b_out, const SE3 &refToNew,
-                    AffLight aff_g2l, float cutoffTH);
   Vec6 calcRes(int lvl, const SE3 &refToNew, AffLight aff_g2l, float cutoffTH);
   void calcGSSSE(int lvl, Mat88 &H_out, Vec8 &b_out, const SE3 &refToNew,
                  AffLight aff_g2l);
-  void calcGS(int lvl, Mat88 &H_out, Vec8 &b_out, const SE3 &refToNew,
-              AffLight aff_g2l);
 
   bool debugPrint, debugPlot;
 
