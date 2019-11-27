@@ -1,3 +1,20 @@
+// Copyright (C) <2020> <Jiawei Mo, Junaed Sattar>
+
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+// This file is modified from <https://github.com/JakobEngel/dso>
+
 #include "PoseEstimator.h"
 #include "FullSystem/FullSystem.h"
 #include "FullSystem/HessianBlocks.h"
@@ -21,73 +38,71 @@ T *allocAligned(int size, std::vector<T *> &rawPtrVec) {
   return alignedPtr;
 }
 
-PoseEstimator::PoseEstimator(int ww, int hh) : lastRef_aff_g2l(0, 0) {
+PoseEstimator::PoseEstimator(int ww, int hh) : ref_aff_g2l_(0, 0) {
   // warped buffers
-  buf_warped_idepth = allocAligned<4, float>(ww * hh, ptrToDelete);
-  buf_warped_u = allocAligned<4, float>(ww * hh, ptrToDelete);
-  buf_warped_v = allocAligned<4, float>(ww * hh, ptrToDelete);
-  buf_warped_dx = allocAligned<4, float>(ww * hh, ptrToDelete);
-  buf_warped_dy = allocAligned<4, float>(ww * hh, ptrToDelete);
-  buf_warped_residual = allocAligned<4, float>(ww * hh, ptrToDelete);
-  buf_warped_weight = allocAligned<4, float>(ww * hh, ptrToDelete);
-  buf_warped_refColor = allocAligned<4, float>(ww * hh, ptrToDelete);
+  buf_warped_idepth_ = allocAligned<4, float>(ww * hh, ptr_to_delete_);
+  buf_warped_u_ = allocAligned<4, float>(ww * hh, ptr_to_delete_);
+  buf_warped_v_ = allocAligned<4, float>(ww * hh, ptr_to_delete_);
+  buf_warped_dx_ = allocAligned<4, float>(ww * hh, ptr_to_delete_);
+  buf_warped_dy_ = allocAligned<4, float>(ww * hh, ptr_to_delete_);
+  buf_warped_residual_ = allocAligned<4, float>(ww * hh, ptr_to_delete_);
+  buf_warped_weight_ = allocAligned<4, float>(ww * hh, ptr_to_delete_);
+  buf_warped_ref_color_ = allocAligned<4, float>(ww * hh, ptr_to_delete_);
 
-  newFrame = 0;
-  debugPlot = false;
-  debugPrint = false;
-  w[0] = h[0] = 0;
+  new_frame_ = 0;
+  debug_print_ = false;
+  w_[0] = h_[0] = 0;
 }
 
 PoseEstimator::~PoseEstimator() {
-  for (float *ptr : ptrToDelete)
+  for (float *ptr : ptr_to_delete_)
     delete[] ptr;
-  ptrToDelete.clear();
+  ptr_to_delete_.clear();
 }
 
-void PoseEstimator::makeK(CalibHessian *HCalib) {
-  w[0] = wG[0];
-  h[0] = hG[0];
+void PoseEstimator::makeK(const std::vector<float> &cam) {
+  w_[0] = wG[0];
+  h_[0] = hG[0];
 
-  fx[0] = HCalib->fxl();
-  fy[0] = HCalib->fyl();
-  cx[0] = HCalib->cxl();
-  cy[0] = HCalib->cyl();
+  fx_[0] = cam[0];
+  fy_[0] = cam[1];
+  cx_[0] = cam[2];
+  cy_[0] = cam[3];
 
   for (int level = 1; level < pyrLevelsUsed; ++level) {
-    w[level] = w[0] >> level;
-    h[level] = h[0] >> level;
-    fx[level] = fx[level - 1] * 0.5;
-    fy[level] = fy[level - 1] * 0.5;
-    cx[level] = (cx[0] + 0.5) / ((int)1 << level) - 0.5;
-    cy[level] = (cy[0] + 0.5) / ((int)1 << level) - 0.5;
+    w_[level] = w_[0] >> level;
+    h_[level] = h_[0] >> level;
+    fx_[level] = fx_[level - 1] * 0.5;
+    fy_[level] = fy_[level - 1] * 0.5;
+    cx_[level] = (cx_[0] + 0.5) / ((int)1 << level) - 0.5;
+    cy_[level] = (cy_[0] + 0.5) / ((int)1 << level) - 0.5;
   }
 }
 
 void PoseEstimator::calcGSSSE(int lvl, Mat88 &H_out, Vec8 &b_out,
                               const SE3 &refToNew, AffLight aff_g2l) {
-  acc.initialize();
+  acc_.initialize();
 
-  __m128 fxl = _mm_set1_ps(fx[lvl]);
-  __m128 fyl = _mm_set1_ps(fy[lvl]);
-  __m128 b0 = _mm_set1_ps(lastRef_aff_g2l.b);
+  __m128 fxl = _mm_set1_ps(fx_[lvl]);
+  __m128 fyl = _mm_set1_ps(fy_[lvl]);
+  __m128 b0 = _mm_set1_ps(ref_aff_g2l_.b);
   __m128 a = _mm_set1_ps((float)(AffLight::fromToVecExposure(
-      lastRef_ab_exposure, newFrame->ab_exposure, lastRef_aff_g2l,
-      aff_g2l)[0]));
+      ref_ab_exposure_, new_frame_->ab_exposure, ref_aff_g2l_, aff_g2l)[0]));
 
   __m128 one = _mm_set1_ps(1);
   __m128 minusOne = _mm_set1_ps(-1);
   __m128 zero = _mm_set1_ps(0);
 
-  int n = buf_warped_n;
+  int n = buf_warped_n_;
   assert(n % 4 == 0);
   for (int i = 0; i < n; i += 4) {
-    __m128 dx = _mm_mul_ps(_mm_load_ps(buf_warped_dx + i), fxl);
-    __m128 dy = _mm_mul_ps(_mm_load_ps(buf_warped_dy + i), fyl);
-    __m128 u = _mm_load_ps(buf_warped_u + i);
-    __m128 v = _mm_load_ps(buf_warped_v + i);
-    __m128 id = _mm_load_ps(buf_warped_idepth + i);
+    __m128 dx = _mm_mul_ps(_mm_load_ps(buf_warped_dx_ + i), fxl);
+    __m128 dy = _mm_mul_ps(_mm_load_ps(buf_warped_dy_ + i), fyl);
+    __m128 u = _mm_load_ps(buf_warped_u_ + i);
+    __m128 v = _mm_load_ps(buf_warped_v_ + i);
+    __m128 id = _mm_load_ps(buf_warped_idepth_ + i);
 
-    acc.updateSSE_eighted(
+    acc_.updateSSE_eighted(
         _mm_mul_ps(id, dx), _mm_mul_ps(id, dy),
         _mm_sub_ps(zero, _mm_mul_ps(id, _mm_add_ps(_mm_mul_ps(u, dx),
                                                    _mm_mul_ps(v, dy)))),
@@ -98,49 +113,49 @@ void PoseEstimator::calcGSSSE(int lvl, Mat88 &H_out, Vec8 &b_out,
         _mm_add_ps(_mm_mul_ps(_mm_mul_ps(u, v), dy),
                    _mm_mul_ps(dx, _mm_add_ps(one, _mm_mul_ps(u, u)))),
         _mm_sub_ps(_mm_mul_ps(u, dy), _mm_mul_ps(v, dx)),
-        _mm_mul_ps(a, _mm_sub_ps(b0, _mm_load_ps(buf_warped_refColor + i))),
-        minusOne, _mm_load_ps(buf_warped_residual + i),
-        _mm_load_ps(buf_warped_weight + i));
+        _mm_mul_ps(a, _mm_sub_ps(b0, _mm_load_ps(buf_warped_ref_color_ + i))),
+        minusOne, _mm_load_ps(buf_warped_residual_ + i),
+        _mm_load_ps(buf_warped_weight_ + i));
   }
 
-  acc.finish();
-  H_out = acc.H.topLeftCorner<8, 8>().cast<double>() * (1.0f / n);
-  b_out = acc.H.topRightCorner<8, 1>().cast<double>() * (1.0f / n);
+  acc_.finish();
+  H_out = acc_.H.topLeftCorner<8, 8>().cast<double>() * (1.0f / n);
+  b_out = acc_.H.topRightCorner<8, 1>().cast<double>() * (1.0f / n);
 
-  H_out.block<8, 3>(0, 0) *= SCALE_XI_TRANS;
-  H_out.block<8, 3>(0, 3) *= SCALE_XI_ROT;
+  H_out.block<8, 3>(0, 0) *= SCALE_XI_ROT;
+  H_out.block<8, 3>(0, 3) *= SCALE_XI_TRANS;
   H_out.block<8, 1>(0, 6) *= SCALE_A;
   H_out.block<8, 1>(0, 7) *= SCALE_B;
-  H_out.block<3, 8>(0, 0) *= SCALE_XI_TRANS;
-  H_out.block<3, 8>(3, 0) *= SCALE_XI_ROT;
+  H_out.block<3, 8>(0, 0) *= SCALE_XI_ROT;
+  H_out.block<3, 8>(3, 0) *= SCALE_XI_TRANS;
   H_out.block<1, 8>(6, 0) *= SCALE_A;
   H_out.block<1, 8>(7, 0) *= SCALE_B;
-  b_out.segment<3>(0) *= SCALE_XI_TRANS;
-  b_out.segment<3>(3) *= SCALE_XI_ROT;
+  b_out.segment<3>(0) *= SCALE_XI_ROT;
+  b_out.segment<3>(3) *= SCALE_XI_TRANS;
   b_out.segment<1>(6) *= SCALE_A;
   b_out.segment<1>(7) *= SCALE_B;
 }
 
 Vec6 PoseEstimator::calcRes(int lvl, const SE3 &refToNew, AffLight aff_g2l,
-                            float cutoffTH) {
+                            float cutoffTH, bool plot_img) {
   float E = 0;
   int numTermsInE = 0;
   int numTermsInWarped = 0;
   int numSaturated = 0;
 
-  int wl = w[lvl];
-  int hl = h[lvl];
-  Eigen::Vector3f *dINewl = newFrame->dIp[lvl];
-  float fxl = fx[lvl];
-  float fyl = fy[lvl];
-  float cxl = cx[lvl];
-  float cyl = cy[lvl];
+  int wl = w_[lvl];
+  int hl = h_[lvl];
+  Eigen::Vector3f *dINewl = new_frame_->dIp[lvl];
+  float fxl = fx_[lvl];
+  float fyl = fy_[lvl];
+  float cxl = cx_[lvl];
+  float cyl = cy_[lvl];
 
   Mat33f R = refToNew.rotationMatrix().cast<float>();
   Vec3f t = refToNew.translation().cast<float>();
   Vec2f affLL =
-      AffLight::fromToVecExposure(lastRef_ab_exposure, newFrame->ab_exposure,
-                                  lastRef_aff_g2l, aff_g2l)
+      AffLight::fromToVecExposure(ref_ab_exposure_, new_frame_->ab_exposure,
+                                  ref_aff_g2l_, aff_g2l)
           .cast<float>();
 
   float sumSquaredShiftT = 0;
@@ -152,21 +167,21 @@ Vec6 PoseEstimator::calcRes(int lvl, const SE3 &refToNew, AffLight aff_g2l,
       setting_huberTH * setting_huberTH; // energy for r=setting_coarseCutoffTH.
 
   MinimalImageB3 *resImage = 0;
-  if (debugPlot || lvl == 0) {
+  if (plot_img) {
     resImage = new MinimalImageB3(wl, hl);
     resImage->setBlack();
-    for (int i = 0; i < h[lvl] * w[lvl]; i++) {
-      int c = newFrame->dIp[lvl][i][0] * 0.9f;
+    for (int i = 0; i < h_[lvl] * w_[lvl]; i++) {
+      int c = new_frame_->dIp[lvl][i][0] * 0.9f;
       if (c > 255)
         c = 255;
       resImage->at(i) = Vec3b(c, c, c);
     }
   }
 
-  for (int i = 0; i < pointxyzi.rows(); i++) {
-    float x = pointxyzi(i, 0);
-    float y = pointxyzi(i, 1);
-    float z = pointxyzi(i, 2);
+  for (size_t i = 0; i < pts_.size(); i++) {
+    float x = pts_[i].first(0);
+    float y = pts_[i].first(1);
+    float z = pts_[i].first(2);
     float u0 = x / z;
     float v0 = y / z;
     float Ku0 = fxl * u0 + cxl;
@@ -216,60 +231,59 @@ Vec6 PoseEstimator::calcRes(int lvl, const SE3 &refToNew, AffLight aff_g2l,
     if (!(Ku > 2 && Kv > 2 && Ku < wl - 3 && Kv < hl - 3 && new_idepth > 0))
       continue;
 
-    float refColor = pointxyzi(i, 3);
+    float refColor = pts_[i].second[lvl];
     Vec3f hitColor = getInterpolatedElement33(dINewl, Ku, Kv, wl);
-
     if (!std::isfinite((float)hitColor[0]))
       continue;
     float residual = hitColor[0] - (float)(affLL[0] * refColor + affLL[1]);
+    // printf("%.1f - (%.1f * %.1f + %.1f) = %.1f\n", hitColor[0], affLL[0],
+    //        refColor, affLL[1], residual);
     float hw =
         fabs(residual) < setting_huberTH ? 1 : setting_huberTH / fabs(residual);
 
+    if (plot_img)
+      resImage->setPixel4(Ku, Kv, Vec3b(0, 0, 255));
     if (fabs(residual) > cutoffTH) {
-      if (debugPlot || lvl == 0)
+      if (plot_img)
         resImage->setPixel4(Ku, Kv, Vec3b(0, 0, 255));
       E += maxEnergy;
       numTermsInE++;
       numSaturated++;
     } else {
-      if (debugPlot || lvl == 0)
-        resImage->setPixel4(Ku, Kv, Vec3b(0, residual + 128, 0));
+      if (plot_img)
+        resImage->setPixel4(Ku, Kv, Vec3b(0, 255, 0));
 
       E += hw * residual * residual * (2 - hw);
       numTermsInE++;
 
-      buf_warped_idepth[numTermsInWarped] = new_idepth;
-      buf_warped_u[numTermsInWarped] = u;
-      buf_warped_v[numTermsInWarped] = v;
-      buf_warped_dx[numTermsInWarped] = hitColor[1];
-      buf_warped_dy[numTermsInWarped] = hitColor[2];
-      buf_warped_residual[numTermsInWarped] = residual;
-      buf_warped_weight[numTermsInWarped] = hw;
-      buf_warped_refColor[numTermsInWarped] = refColor;
+      buf_warped_idepth_[numTermsInWarped] = new_idepth;
+      buf_warped_u_[numTermsInWarped] = u;
+      buf_warped_v_[numTermsInWarped] = v;
+      buf_warped_dx_[numTermsInWarped] = hitColor[1];
+      buf_warped_dy_[numTermsInWarped] = hitColor[2];
+      buf_warped_residual_[numTermsInWarped] = residual;
+      buf_warped_weight_[numTermsInWarped] = hw;
+      buf_warped_ref_color_[numTermsInWarped] = refColor;
       numTermsInWarped++;
     }
   }
 
   while (numTermsInWarped % 4 != 0) {
-    buf_warped_idepth[numTermsInWarped] = 0;
-    buf_warped_u[numTermsInWarped] = 0;
-    buf_warped_v[numTermsInWarped] = 0;
-    buf_warped_dx[numTermsInWarped] = 0;
-    buf_warped_dy[numTermsInWarped] = 0;
-    buf_warped_residual[numTermsInWarped] = 0;
-    buf_warped_weight[numTermsInWarped] = 0;
-    buf_warped_refColor[numTermsInWarped] = 0;
+    buf_warped_idepth_[numTermsInWarped] = 0;
+    buf_warped_u_[numTermsInWarped] = 0;
+    buf_warped_v_[numTermsInWarped] = 0;
+    buf_warped_dx_[numTermsInWarped] = 0;
+    buf_warped_dy_[numTermsInWarped] = 0;
+    buf_warped_residual_[numTermsInWarped] = 0;
+    buf_warped_weight_[numTermsInWarped] = 0;
+    buf_warped_ref_color_[numTermsInWarped] = 0;
     numTermsInWarped++;
   }
-  buf_warped_n = numTermsInWarped;
+  buf_warped_n_ = numTermsInWarped;
 
-  if (debugPlot) {
+  if (plot_img) {
     IOWrap::displayImage("RES", resImage, false);
-    IOWrap::waitKey(0);
-    delete resImage;
-  } else if (lvl == 0) {
-    IOWrap::displayImage("RES", resImage, false);
-    IOWrap::waitKey(1);
+    // IOWrap::waitKey(0);
     delete resImage;
   }
 
@@ -284,47 +298,33 @@ Vec6 PoseEstimator::calcRes(int lvl, const SE3 &refToNew, AffLight aff_g2l,
   return rs;
 }
 
-void PoseEstimator::setPointsRef(
-    const std::vector<std::pair<Eigen::Vector3d, float>> &pts) {
-  pointxyzi = Eigen::MatrixXf(pts.size(), 4);
-
-  for (int i = 0; i < pts.size(); i++) {
-    pointxyzi(i, 0) = pts[i].first(0);
-    pointxyzi(i, 1) = pts[i].first(1);
-    pointxyzi(i, 2) = pts[i].first(2);
-    pointxyzi(i, 3) = pts[i].second;
-  }
-}
-
-void PoseEstimator::estimate(
-    const std::vector<std::pair<Eigen::Vector3d, float>> &pts,
-    const std::pair<AffLight, float> &lastAffLightExposure,
-    FrameHessian *newFrameHessian, CalibHessian *HCalib,
-    Eigen::Matrix<double, 4, 4> &lastToNew_out, Mat66 &H_pose_init,
-    Mat66 &H_pose_last, Vec5 &lastResiduals, Vec5 &lastInners,
-    int coarsestLvl) {
+bool PoseEstimator::estimate(
+    const std::vector<std::pair<Eigen::Vector3d, float *>> &pts,
+    float ref_ab_exposure, FrameHessian *new_fh, const std::vector<float> &cam,
+    Eigen::Matrix4d &lastToNew, int coarsestLvl) {
   int maxIterations[] = {10, 20, 50, 50, 50};
   float lambdaExtrapolationLimit = 0.001;
-
   assert(coarsestLvl < 5 && coarsestLvl < pyrLevelsUsed);
 
-  makeK(HCalib);
-  setPointsRef(pts);
+  makeK(cam);
+  pts_ = pts;
 
+  int lastInners[PYR_LEVELS];
+  Vec5 lastResiduals;
   lastResiduals.setConstant(NAN);
 
-  newFrame = newFrameHessian;
-  AffLight aff_g2l_current = newFrame->aff_g2l();
+  new_frame_ = new_fh;
 
-  Sophus::SE3 refToNew_current(lastToNew_out.block<3, 3>(0, 0),
-                               lastToNew_out.block<3, 1>(0, 3));
+  ref_aff_g2l_ = AffLight();
+  ref_ab_exposure_ = ref_ab_exposure;
+  AffLight aff_g2l_current = AffLight();
 
-  lastRef_aff_g2l = lastAffLightExposure.first;
-  lastRef_ab_exposure = lastAffLightExposure.second;
+  SE3 refToNew_current(lastToNew.block<3, 3>(0, 0),
+                       lastToNew.block<3, 1>(0, 3));
 
   bool haveRepeated = false;
+  bool haveAccepted = false;
 
-  Mat88 H_current;
   for (int lvl = coarsestLvl; lvl >= 0; lvl--) {
     Mat88 H;
     Vec8 b;
@@ -342,21 +342,14 @@ void PoseEstimator::estimate(
     }
 
     calcGSSSE(lvl, H, b, refToNew_current, aff_g2l_current);
-    if (lvl == coarsestLvl) {
-      H_pose_init = H.topLeftCorner<6, 6>();
-      H_pose_init.block<6, 3>(0, 0) /= SCALE_XI_TRANS;
-      H_pose_init.block<6, 3>(0, 3) /= SCALE_XI_ROT;
-      H_pose_init.block<3, 6>(0, 0) /= SCALE_XI_TRANS;
-      H_pose_init.block<3, 6>(3, 0) /= SCALE_XI_ROT;
-    }
 
     float lambda = 0.01;
 
-    if (debugPrint) {
-      Vec2f relAff = AffLight::fromToVecExposure(
-                         lastRef_ab_exposure, newFrame->ab_exposure,
-                         lastRef_aff_g2l, aff_g2l_current)
-                         .cast<float>();
+    if (debug_print_) {
+      Vec2f relAff =
+          AffLight::fromToVecExposure(ref_ab_exposure_, new_frame_->ab_exposure,
+                                      ref_aff_g2l_, aff_g2l_current)
+              .cast<float>();
       printf("lvl%d, it %d (l=%f / %f) %s: %.3f->%.3f (%d -> %d) (|inc| = "
              "%f)! \t",
              lvl, -1, lambda, 1.0f, "INITIA", 0.0f, resOld[0] / resOld[1], 0,
@@ -403,8 +396,8 @@ void PoseEstimator::estimate(
       inc *= extrapFac;
 
       Vec8 incScaled = inc;
-      incScaled.segment<3>(0) *= SCALE_XI_TRANS;
-      incScaled.segment<3>(3) *= SCALE_XI_ROT;
+      incScaled.segment<3>(0) *= SCALE_XI_ROT;
+      incScaled.segment<3>(3) *= SCALE_XI_TRANS;
       incScaled.segment<1>(6) *= SCALE_A;
       incScaled.segment<1>(7) *= SCALE_B;
 
@@ -422,10 +415,10 @@ void PoseEstimator::estimate(
 
       bool accept = (resNew[0] / resNew[1]) < (resOld[0] / resOld[1]);
 
-      if (debugPrint) {
-        Vec2f relAff = AffLight::fromToVecExposure(lastRef_ab_exposure,
-                                                   newFrame->ab_exposure,
-                                                   lastRef_aff_g2l, aff_g2l_new)
+      if (debug_print_) {
+        Vec2f relAff = AffLight::fromToVecExposure(ref_ab_exposure_,
+                                                   new_frame_->ab_exposure,
+                                                   ref_aff_g2l_, aff_g2l_new)
                            .cast<float>();
         printf("lvl %d, it %d (l=%f / %f) %s: %.3f->%.3f (%d -> %d) (|inc| = "
                "%f)! \t",
@@ -439,11 +432,11 @@ void PoseEstimator::estimate(
       }
       if (accept) {
         calcGSSSE(lvl, H, b, refToNew_new, aff_g2l_new);
-        H_current = H;
         resOld = resNew;
         aff_g2l_current = aff_g2l_new;
         refToNew_current = refToNew_new;
         lambda *= 0.5;
+        haveAccepted = true;
       } else {
         lambda *= 4;
         if (lambda < lambdaExtrapolationLimit)
@@ -451,7 +444,7 @@ void PoseEstimator::estimate(
       }
 
       if (!(inc.norm() > 1e-3)) {
-        if (debugPrint)
+        if (debug_print_)
           printf("inc too small, break!\n");
         break;
       }
@@ -459,22 +452,30 @@ void PoseEstimator::estimate(
 
     // set last residual for that level, as well as flow indicators.
     lastResiduals[lvl] = sqrtf((float)(resOld[0] / resOld[1]));
-    lastInners[lvl] = 1 - resOld[5];
+    lastInners[lvl] = resOld[1];
 
     if (levelCutoffRepeat > 1 && !haveRepeated) {
       lvl++;
       haveRepeated = true;
-      printf("REPEAT LEVEL!\n");
     }
   }
 
   // set!
-  lastToNew_out = refToNew_current.matrix();
-  H_pose_last = H_current.topLeftCorner<6, 6>();
-  H_pose_last.block<6, 3>(0, 0) /= SCALE_XI_TRANS;
-  H_pose_last.block<6, 3>(0, 3) /= SCALE_XI_ROT;
-  H_pose_last.block<3, 6>(0, 0) /= SCALE_XI_TRANS;
-  H_pose_last.block<3, 6>(3, 0) /= SCALE_XI_ROT;
+  lastToNew = refToNew_current.matrix();
+
+  // check if the final pose is:
+  // 1. with small residual;
+  // 2. with high inner ratio;
+  // 3. close enough as loop closure
+  bool low_res = lastResiduals[0] < RES_THRES;
+  float inlier_ratio = float(lastInners[0]) / pts.size();
+  bool enough_inlier = inlier_ratio > INNER_RATIO;
+  auto tfm_se3 = SE3(lastToNew).log();
+  bool tfm_close = tfm_se3.head<2>().norm() < XY_THRES &&
+                   fabs(tfm_se3(2)) < Z_THRES &&
+                   tfm_se3.tail<3>().norm() < RAD_THRES;
+  printf("direct: (%.3f, %.3f) ", lastResiduals[0], inlier_ratio);
+  return haveAccepted && low_res && enough_inlier && tfm_close;
 }
 
 } // namespace dso

@@ -4,12 +4,12 @@
   <version>1.0.0</version>
   <description>
 
-    Direct Stereo SLAM
+    Fast Direct Stereo Visual SLAM
 
   </description>
 
   <author>Jiawei Mo</author>
-  <license>MIT</license>
+  <license>GPLv3</license>
   <maintainer email="moxxx066@umn.edu">
     Jiawei Mo
   </maintainer>

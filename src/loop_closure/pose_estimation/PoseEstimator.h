@@ -1,3 +1,20 @@
+// Copyright (C) <2020> <Jiawei Mo, Junaed Sattar>
+
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+// This file is modified from <https://github.com/JakobEngel/dso>
+
 #pragma once
 
 #include "OptimizationBackend/MatrixAccumulators.h"
@@ -6,8 +23,13 @@
 #include "vector"
 #include <math.h>
 
+#define RES_THRES 10.0
+#define INNER_RATIO 0.9
+#define XY_THRES 0.3
+#define Z_THRES 2.5
+#define RAD_THRES 0.2
+
 namespace dso {
-struct CalibHessian;
 struct FrameHessian;
 struct PointFrameResidual;
 
@@ -18,58 +40,51 @@ public:
   PoseEstimator(int w, int h);
   ~PoseEstimator();
 
-  void estimate(const std::vector<std::pair<Eigen::Vector3d, float>> &pts,
-                const std::pair<AffLight, float> &lastAffLightExposure,
-                FrameHessian *newFrameHessian, CalibHessian *HCalib,
-                Eigen::Matrix<double, 4, 4> &lastToNew_out, Mat66 &H_pose_init,
-                Mat66 &H_pose_last, Vec5 &lastResiduals, Vec5 &lastInners,
+  bool estimate(const std::vector<std::pair<Eigen::Vector3d, float *>> &pts,
+                float ref_ab_exposure, FrameHessian *new_fh,
+                const std::vector<float> &cam, Eigen::Matrix4d &lastToNew,
                 int coarsestLvl);
 
 private:
-  void makeK(CalibHessian *HCalib);
-
-  void setPointsRef(const std::vector<std::pair<Eigen::Vector3d, float>> &pts);
-
-  Vec6 calcRes(int lvl, const SE3 &refToNew, AffLight aff_g2l, float cutoffTH);
+  void makeK(const std::vector<float> &cam);
+  Vec6 calcRes(int lvl, const SE3 &refToNew, AffLight aff_g2l, float cutoffTH,
+               bool plot_img = false);
   void calcGSSSE(int lvl, Mat88 &H_out, Vec8 &b_out, const SE3 &refToNew,
                  AffLight aff_g2l);
 
-  bool debugPrint, debugPlot;
+  bool debug_print_;
 
-  Mat33f K[PYR_LEVELS];
-  Mat33f Ki[PYR_LEVELS];
-  float fx[PYR_LEVELS];
-  float fy[PYR_LEVELS];
+  float fx_[PYR_LEVELS];
+  float fy_[PYR_LEVELS];
   float fxi[PYR_LEVELS];
   float fyi[PYR_LEVELS];
-  float cx[PYR_LEVELS];
-  float cy[PYR_LEVELS];
-  float cxi[PYR_LEVELS];
-  float cyi[PYR_LEVELS];
-  int w[PYR_LEVELS];
-  int h[PYR_LEVELS];
-
-  AffLight lastRef_aff_g2l;
-  float lastRef_ab_exposure;
-  FrameHessian *newFrame;
+  float cx_[PYR_LEVELS];
+  float cy_[PYR_LEVELS];
+  int w_[PYR_LEVELS];
+  int h_[PYR_LEVELS];
 
   // pc buffers
-  Eigen::MatrixXf pointxyzi;
+  std::vector<std::pair<Eigen::Vector3d, float *>> pts_;
 
   // warped buffers
-  float *buf_warped_idepth;
-  float *buf_warped_u;
-  float *buf_warped_v;
-  float *buf_warped_dx;
-  float *buf_warped_dy;
-  float *buf_warped_residual;
-  float *buf_warped_weight;
-  float *buf_warped_refColor;
-  int buf_warped_n;
+  float *buf_warped_idepth_;
+  float *buf_warped_u_;
+  float *buf_warped_v_;
+  float *buf_warped_dx_;
+  float *buf_warped_dy_;
+  float *buf_warped_residual_;
+  float *buf_warped_weight_;
+  float *buf_warped_ref_color_;
+  int buf_warped_n_;
 
-  std::vector<float *> ptrToDelete;
+  Accumulator9 acc_;
 
-  Accumulator9 acc;
+  std::vector<float *> ptr_to_delete_;
+
+  // photometric terms
+  AffLight ref_aff_g2l_;
+  float ref_ab_exposure_;
+  FrameHessian *new_frame_;
 };
 
 } // namespace dso

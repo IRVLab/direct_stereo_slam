@@ -36,7 +36,7 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
-set(CMAKE_CXX_FLAGS "-march=native")
+set(CMAKE_CXX_FLAGS "-march=native -Wall")
 
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
@@ -52,25 +52,28 @@ message("-- Found DSO library at \"${DSO_LIBRARY}\"")
 find_package(Boost COMPONENTS system thread)
 find_package(Pangolin 0.2 REQUIRED)
 
-set(SODSOSystem_SOURCE_FILES
-  src/SODSOSystem.cpp
-  src/dso_helpers/SODSOSystemDebugStuff.cpp
-  src/dso_helpers/SODSOSystemMarginalize.cpp
-  src/dso_helpers/SODSOSystemOptimize.cpp
-  src/dso_helpers/SODSOSystemOptPoint.cpp
+set(DSO_HELPERS_SOURCE_FILES
+  src/dso_helpers/FrontEndDebugStuff.cpp
+  src/dso_helpers/FrontEndMarginalize.cpp
+  src/dso_helpers/FrontEndOptimize.cpp
+  src/dso_helpers/FrontEndOptPoint.cpp
 )
 
 include_directories(${DSO_INCLUDE_DIRS} src)
 
 add_executable(
-  so_dso_node src/so_dso_node.cpp 
-  ${SODSOSystem_SOURCE_FILES} 
-  src/loop_closure/SODSOLoopHandler.cpp 
+  slam_node 
+  src/main.cpp 
+  src/FrontEnd.cpp
+  ${DSO_HELPERS_SOURCE_FILES} 
   src/scale_optimization/ScaleOptimizer.cpp 
-  src/loop_closure/pose_estimation/PoseEstimator.cpp 
-  src/loop_closure/place_recognition/scan_context/ScanContext.cpp)
+  src/loop_closure/LoopHandler.cpp 
+  src/loop_closure/pangolin_viewer/PangolinLoopViewer.cpp 
+  src/loop_closure/pangolin_viewer/KeyFrameDisplay.cpp 
+  src/loop_closure/scan_context/ScanContext.cpp 
+  src/loop_closure/pose_estimation/PoseEstimator.cpp)
   
-target_link_libraries(so_dso_node
+target_link_libraries(slam_node
     ${DSO_LIBRARY}
     ${Pangolin_LIBRARIES}
     ${OpenCV_LIBS}
