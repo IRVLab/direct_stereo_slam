@@ -201,9 +201,11 @@ void FrontEnd::marginalizeFrame(FrameHessian *frame, float scale_error) {
     prv_existing_kf_size = prev_kf_size_;
   }
 
-  // printf("dso_error: %.2f * %d - scale_error: %.2f \n", dso_error,
-  // energy_count,
-  //        scale_error);
+  if (dso_error < 0 || scale_error < 0) {
+    printf("dso_error: %.2f * %d - scale_error: %.2f \n", dso_error,
+           energy_count, scale_error);
+  }
+
   loop_handler_->publishKeyframes(frame, &h_calib_, dso_error, scale_error);
 
   frame->shell->marginalizedAt = frame_hessians_.back()->shell->id;

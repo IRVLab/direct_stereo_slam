@@ -971,8 +971,10 @@ void FrontEnd::setPrecalcValues() {
 }
 
 /* ========================= Scale optimization ========================== */
-void FrontEnd::setScaleOptimizer(ScaleOptimizer *scale_optimizer) {
+void FrontEnd::setScaleOptimizer(ScaleOptimizer *scale_optimizer,
+                                 float accept_thres) {
   scale_optimizer_ = scale_optimizer;
+  scale_accept_thres_ = accept_thres;
 }
 
 void FrontEnd::addStereoImg(cv::Mat stereo_img, int stereo_id) {
@@ -1029,19 +1031,25 @@ float FrontEnd::optimizeScale() {
   auto t1 = std::chrono::steady_clock::now();
   scale_opt_time_.emplace_back(duration(t0, t1));
 
+  bool scale_opt_succeed = scale_error < scale_accept_thres_;
+
   // when scale optimization is working, we don't expect sudden scale change
-  if (scale_trapped && fabs(new_scale - 1.0) > 0.5) {
-    scale_error = -1;
+  bool scale_jump = fabs(new_scale - 1.0) > 0.5;
+  if (scale_trapped && scale_jump) {
+    scale_opt_succeed = false;
   }
 
   // when scale optimization fails continuously, we need to re-initialize scale
-  scale_opt_fails = scale_error > 0 ? 0 : scale_opt_fails + 1;
+  scale_opt_fails = scale_opt_succeed ? 0 : scale_opt_fails + 1;
   if (scale_opt_fails > 5) {
     scale_trapped = false;
+    scale_error = -1;
   }
 
-  // adjust the scale of DSO
-  if (scale_error > 0) {
+  if (!scale_opt_succeed) {
+    printf("Scale rejected: error=%f, scale=%f\n", scale_error, new_scale);
+  } else {
+    // adjust the scale of DSO
     // std::cout << "Changing scale to " << scale << std::endl;
     for (FrameHessian *fh : frame_hessians_) {
       for (PointHessian *ph : fh->pointHessians) {
@@ -1066,8 +1074,8 @@ float FrontEnd::optimizeScale() {
 
     if (!scale_trapped) {
       printf("scale trapped to %.2f\n", new_scale);
+      scale_trapped = true;
     }
-    scale_trapped = true;
   }
 
   return scale_error;

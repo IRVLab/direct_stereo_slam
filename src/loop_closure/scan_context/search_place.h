@@ -56,15 +56,15 @@ inline void search_ringkey(const flann::Matrix<float> &ringkey,
   queue_idx++;
 }
 
-inline int search_sc(SigType &signature,
-                     const std::vector<dso::LoopFrame *> &loop_frames,
-                     const std::vector<int> &candidates, int sc_width,
-                     float sc_thres) {
-  int res_idx = candidates[0];
-  double res_diff = 1.1;
+inline void search_sc(SigType &signature,
+                      const std::vector<dso::LoopFrame *> &loop_frames,
+                      const std::vector<int> &candidates, int sc_width,
+                      int &res_idx, float &res_diff) {
+  res_idx = candidates[0];
+  res_diff = 1.1;
   for (auto &candidate : candidates) {
     // Compute difference by Euclidean distance
-    double cur_prod = 0;
+    float cur_prod = 0;
     size_t m(0), n(0);
     SigType &candi_sig = loop_frames[candidate]->signature;
     // siganture is a sparse vector <index, value>
@@ -76,17 +76,10 @@ inline int search_sc(SigType &signature,
       }
     }
 
-    double cur_diff = (1 - cur_prod / sc_width) / 2.0;
+    float cur_diff = (1 - cur_prod / sc_width) / 2.0;
     if (res_diff > cur_diff) {
       res_idx = candidate;
       res_diff = cur_diff;
     }
   }
-
-  printf("SC: %d(%.3f) ", loop_frames[res_idx]->id, res_diff);
-  if (res_diff > sc_thres) {
-    res_idx = -1;
-  }
-
-  return res_idx;
 }

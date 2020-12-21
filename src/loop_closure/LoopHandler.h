@@ -49,12 +49,11 @@ struct LoopEdge {
                                              tfm_t_f.block<3, 1>(0, 3))) {
     // heuristically set information matrix by errors
     information.setIdentity();
-    if (dso_error > 0) {
+    if (dso_error > 0 && scale_error > 0) {
       information *= (1.0 / dso_error);
-      information.topLeftCorner<3, 3>() *=
-          scale_error > 0 ? 1.0 / scale_error : 1e-9;
+      information.topLeftCorner<3, 3>() *= (1.0 / scale_error);
     } else {
-      information *= 1e-9;
+      information *= 0;
     }
   }
 };

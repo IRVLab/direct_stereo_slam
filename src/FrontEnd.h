@@ -86,7 +86,7 @@ public:
   void setGammaFunction(float *BInv);
 
   /* ========================= Scale optimization ========================== */
-  void setScaleOptimizer(ScaleOptimizer *scale_optimizer);
+  void setScaleOptimizer(ScaleOptimizer *scale_optimizer, float accept_thres);
   void addStereoImg(cv::Mat stereo_img, int stereo_id);
 
   /* ============================ Loop closure ============================= */
@@ -209,6 +209,7 @@ private:
   std::queue<std::pair<int, cv::Mat>> stereo_id_img_queue_;
   std::vector<float> scale_errors_;
   ScaleOptimizer *scale_optimizer_;
+  float scale_accept_thres_; // threshold to accept the result
   float optimizeScale();
 
   /* ============================ Loop closure ============================= */

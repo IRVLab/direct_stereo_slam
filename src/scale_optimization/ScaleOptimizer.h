@@ -36,8 +36,7 @@ class ScaleOptimizer {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
-  ScaleOptimizer(Undistort *undistorter1_, const std::vector<double> &tfm_vec,
-                 float accept_thres);
+  ScaleOptimizer(Undistort *undistorter1_, const std::vector<double> &tfm_vec);
   ~ScaleOptimizer();
 
   float optimize(std::vector<FrameHessian *> frameHessians0,
@@ -93,7 +92,6 @@ private:
   Vec6 calcRes(int lvl, float scale, float cutoffTH);
 
   int frame0_id_;
-  float accept_thres_; // threshold to accept the result
   FrameHessian *frame0_;
   FrameHessian *frame1_;
   Undistort *undistorter1_; // undistort image

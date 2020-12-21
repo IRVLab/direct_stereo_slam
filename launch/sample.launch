@@ -5,11 +5,12 @@
   <rosparam command="load" file="[PATH_TO_STEREO_CONFIG]/T_stereo.yaml" ns="direct_stereo_slam"/>
 
   <node name="direct_stereo_slam" pkg="direct_stereo_slam" type="slam_node" output="screen">
-    <!--Camera parameters-->
     <param name="cam0_topic" value="[CAM0 TOPIC]" />
     <param name="cam1_topic" value="[CAM1 TOPIC]" />
     <param name="calib0" value="[PATH_TO_STEREO_CONFIG]/camera0.txt" />
     <param name="calib1" value="[PATH_TO_STEREO_CONFIG]/camera1.txt" />
+
+    <!-- Check main.cpp for more fine-tuning parameters -->
   </node>
 
   </launch>

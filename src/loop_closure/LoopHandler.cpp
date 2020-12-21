@@ -278,16 +278,18 @@ void LoopHandler::run() {
     search_ringkey_time_.emplace_back(duration(t0, t1));
 
     if (!ringkey_candidates.empty()) {
-      printf("%d ", cur_id_);
       // search by ScanContext
       t0 = std::chrono::steady_clock::now();
-      int matched_idx = search_sc(signature, loop_frames_, ringkey_candidates,
-                                  sc_ptr_->getWidth(), scan_context_thres_);
+      int matched_idx;
+      float sc_diff;
+      search_sc(signature, loop_frames_, ringkey_candidates,
+                sc_ptr_->getWidth(), matched_idx, sc_diff);
       t1 = std::chrono::steady_clock::now();
       search_sc_time_.emplace_back(duration(t0, t1));
 
-      if (matched_idx >= 0) {
+      if (sc_diff < scan_context_thres_) {
         auto matched_frame = loop_frames_[matched_idx];
+        printf("%d - %d SC: %.3f ", cur_id_, matched_frame->id, sc_diff);
 
         // calculate the initial tfm_matched_cur from ScanContext
         Eigen::Matrix4d tfm_cur_matched =
@@ -321,7 +323,7 @@ void LoopHandler::run() {
             icp_loop_count_++;
             tfm_cur_matched = tfm_cur_matched_icp;
           }
-          printf("add loop");
+          printf("add loop\n");
 
           // add the loop constraint
           cur_frame->edges.emplace_back(
@@ -351,9 +353,10 @@ void LoopHandler::run() {
           merge_point_clouds(pc_ptr, matched_frame->pts_spherical,
                              tfm_cur_matched, {255, 0, 0});
 #endif
+        } else {
+          printf("\n");
         }
       }
-      printf("\n");
     }
 #ifdef PUB_PC
     pc_ptr->header.frame_id = "map";

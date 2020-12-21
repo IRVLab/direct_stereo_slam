@@ -36,10 +36,8 @@ T *allocAligned(int size, std::vector<T *> &rawPtrVec) {
 }
 
 ScaleOptimizer::ScaleOptimizer(Undistort *undistorter1,
-                               const std::vector<double> &tfm_vec,
-                               float accept_thres)
-    : frame0_id_(-1), accept_thres_(accept_thres), frame0_(0), frame1_(0),
-      undistorter1_(undistorter1) {
+                               const std::vector<double> &tfm_vec)
+    : frame0_id_(-1), frame0_(0), frame1_(0), undistorter1_(undistorter1) {
   // tranformation form frame0 to frame1
   Eigen::Matrix4d tfm_eigen;
   cv::Mat tfm_stereo_cv = cv::Mat(tfm_vec);
@@ -216,20 +214,11 @@ float ScaleOptimizer::optimize(std::vector<FrameHessian *> frameHessians0,
     }
   }
 
-  delete frame1_;
-  delete shell1;
-
-  // printf("Final scale: %f Final res: %f\n", scale_current,
-  // last_residuals[0]);
-
-  if (scale_current < 0 || !(last_residuals[0] < accept_thres_)) {
-    printf("Scale opt. rejected: last_residuals=%f, scale changed: %f -> %f\n",
-           last_residuals[0], scale, scale_current);
-    return -1;
-  }
-
   // set!
   scale = scale_current;
+
+  delete frame1_;
+  delete shell1;
   return last_residuals[0];
 }
 

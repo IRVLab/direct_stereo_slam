@@ -11,6 +11,4 @@
     <param name="scale_accept_thres" value="10.0" />
   </node>
 
-  <!-- <node name="gps_recorder" pkg="direct_stereo_slam" type="gps_recorder" output="screen"/> -->
-
   </launch>

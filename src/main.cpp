@@ -35,6 +35,7 @@ private:
   Undistort *undistorter0;
 
   // scale optimizer
+  float scale_opt_thres_; // set to -1 to disable scale optimization
   ScaleOptimizer *scale_optimizer_;
 
   // loop closure
@@ -150,14 +151,13 @@ SLAMNode::SLAMNode() {
   nhPriv.param("nomt", nomt, false);
 
   // scale optimization parameters
-  float scale_opt_thres; // set to -1 to disable scale optimization
-  nhPriv.param("scale_accept_thres", scale_opt_thres, 15.0f);
+  nhPriv.param("scale_accept_thres", scale_opt_thres_, 15.0f);
 
   // loop closure parameters
   float lidar_range; // set to -1 to disable loop closure
   float scan_context_thres;
   nhPriv.param("lidar_range", lidar_range, 40.0f);
-  nhPriv.param("scan_context_thres", scan_context_thres, 0.4f);
+  nhPriv.param("scan_context_thres", scan_context_thres, 0.33f);
 
   /* ******************************************************************** */
 
@@ -175,15 +175,14 @@ SLAMNode::SLAMNode() {
   frontEnd = new FrontEnd();
 
   // Scale optimization
-  if (scale_opt_thres > 0) {
+  if (scale_opt_thres_ > 0) {
     Undistort *undistorter1 = Undistort::getUndistorterForFile(
         calib1, gamma1, vignette1); // will be deleted in ~ScaleOptimizer()
     assert((int)undistorter0->getSize()[0] == (int)undistorter1->getSize()[0]);
     assert((int)undistorter0->getSize()[1] == (int)undistorter1->getSize()[1]);
 
-    scale_optimizer_ =
-        new ScaleOptimizer(undistorter1, tfm_stereo, scale_opt_thres);
-    frontEnd->setScaleOptimizer(scale_optimizer_);
+    scale_optimizer_ = new ScaleOptimizer(undistorter1, tfm_stereo);
+    frontEnd->setScaleOptimizer(scale_optimizer_, scale_opt_thres_);
   } else {
     scale_optimizer_ = 0;
   }
@@ -263,8 +262,8 @@ void SLAMNode::imageMessageCallback(const sensor_msgs::ImageConstPtr &msg0,
 
     printf("Reinitializing\n");
     frontEnd = new FrontEnd(existing_kf_size);
-    if (scale_optimizer_) {
-      frontEnd->setScaleOptimizer(scale_optimizer_);
+    if (scale_opt_thres_ > 0) {
+      frontEnd->setScaleOptimizer(scale_optimizer_, scale_opt_thres_);
     }
     frontEnd->setLoopHandler(loop_handler_);
     frontEnd->output_wrapper_ = wraps;
