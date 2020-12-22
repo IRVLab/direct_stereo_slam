@@ -15,10 +15,9 @@
 
 #include "LoopHandler.h"
 // loop closure helpers
-#include "loop_closure/process_pts/generate_spherical_points.h"
-#include "loop_closure/process_pts/icp.h"
-#include "loop_closure/scan_context/search_place.h"
-#include "timing.h"
+#include "loop_closure/loop_detection/generate_spherical_points.h"
+#include "loop_closure/loop_detection/search_place.h"
+#include "loop_closure/pose_estimation/icp.h"
 
 #include <fstream>
 #include <g2o/core/optimization_algorithm_levenberg.h>
@@ -26,7 +25,6 @@
 #include <g2o/solvers/eigen/linear_solver_eigen.h>
 
 namespace dso {
-
 LoopHandler::LoopHandler(float lidar_range, float scan_context_thres,
                          IOWrap::PangolinLoopViewer *pangolin_viewer)
     : cur_id_(-1), lidar_range_(lidar_range),
@@ -50,6 +48,7 @@ LoopHandler::LoopHandler(float lidar_range, float scan_context_thres,
       new g2o::OptimizationAlgorithmLevenberg(
           g2o::make_unique<g2o::BlockSolverX>(std::move(linearSolver)));
   pose_optimizer_.setAlgorithm(algorithm);
+  pose_optimizer_.setVerbose(false);
 
   running_ = true;
   run_thread_ = boost::thread(&LoopHandler::run, this);
@@ -58,39 +57,26 @@ LoopHandler::LoopHandler(float lidar_range, float scan_context_thres,
   icp_loop_count_ = 0;
 }
 
-void LoopHandler::printTimeStatAndSavePose() {
+void LoopHandler::savePose() {
   running_ = false;
 
-  std::cout << "======Loop Closure Time======= " << std::endl;
-  std::cout << "pts_generation " << 1000 * average(pts_generation_time_)
-            << " * " << pts_generation_time_.size() << std::endl;
-  std::cout << "sc_generation " << 1000 * average(sc_generation_time_) << " * "
-            << sc_generation_time_.size() << std::endl;
-  std::cout << "search_ringkey " << 1000 * average(search_ringkey_time_)
-            << " * " << search_ringkey_time_.size() << std::endl;
-  std::cout << "search_sc " << 1000 * average(search_sc_time_) << " * "
-            << search_sc_time_.size() << std::endl;
-  std::cout << "direct_est " << 1000 * average(direct_est_time_) << " * "
-            << direct_est_time_.size() << std::endl;
-  std::cout << "icp " << 1000 * average(icp_time_) << " * " << icp_time_.size()
-            << std::endl;
-  std::cout << "pose_graph_opt " << 1000 * average(opt_time_) << " * "
-            << opt_time_.size() << std::endl;
-  std::cout << "direct_loop_count " << direct_loop_count_ << std::endl;
-  std::cout << "icp_loop_count " << icp_loop_count_ << std::endl;
-  std::cout << "============================== " << std::endl;
-
   // Export the final pose graph
-  std::ofstream posefile;
-  posefile.open("id_pose.txt");
-  posefile << std::setprecision(6);
+  std::ofstream sodso_file, dslam_file;
+  sodso_file.open("sodso.txt");
+  dslam_file.open("dslam.txt");
+  sodso_file << std::setprecision(6);
+  dslam_file << std::setprecision(6);
   for (auto &lf : loop_frames_) {
-    posefile << lf->incoming_id << " ";
+    auto t_wc = lf->trans_w_c_orig;
+    sodso_file << lf->incoming_id << " ";
+    sodso_file << t_wc(0) << " " << t_wc(1) << " " << t_wc(2) << std::endl;
 
-    auto t_wc = lf->tfm_w_c.translation();
-    posefile << t_wc(0) << " " << t_wc(1) << " " << t_wc(2) << std::endl;
+    t_wc = lf->tfm_w_c.translation();
+    dslam_file << lf->incoming_id << " ";
+    dslam_file << t_wc(0) << " " << t_wc(1) << " " << t_wc(2) << std::endl;
   }
-  posefile.close();
+  sodso_file.close();
+  dslam_file.close();
 }
 
 LoopHandler::~LoopHandler() {
@@ -125,13 +111,13 @@ void LoopHandler::optimize() {
     }
 
     g2o::VertexSE3 *v = new g2o::VertexSE3();
-    v->setId(lf->id);
+    v->setId(lf->kf_id);
     v->setEstimate(lf->tfm_w_c);
     pose_optimizer_.addVertex(v);
     lf->graph_added = true;
 
     // no constraint for the first node of each new sequence
-    if (lf->dso_error < -1) {
+    if (isnan(lf->dso_error)) {
       continue;
     }
 
@@ -148,9 +134,8 @@ void LoopHandler::optimize() {
   }
 
   // fix last vertex
-  pose_optimizer_.vertex(loop_frames_.back()->id)->setFixed(true);
+  pose_optimizer_.vertex(loop_frames_.back()->kf_id)->setFixed(true);
 
-  pose_optimizer_.setVerbose(false);
   pose_optimizer_.initializeOptimization();
   pose_optimizer_.computeInitialGuess();
   pose_optimizer_.optimize(25);
@@ -201,12 +186,11 @@ void LoopHandler::publishKeyframes(FrameHessian *fh, CalibHessian *HCalib,
     generate_spherical_points(pts_nearby_, id_pose_wc_, cur_wc.inverse(),
                               lidar_range_, pts_spherical);
     auto t1 = std::chrono::steady_clock::now();
-    pts_generation_time_.emplace_back(duration(t0, t1));
+    pts_generation_time_.emplace_back(t1 - t0);
   }
 
-  LoopFrame *cur_frame = new LoopFrame(
-      cur_id_, fh->shell->incoming_id, cur_wc, pts_dso, fh, {fx, fy, cx, cy},
-      fh->ab_exposure, pts_spherical, dso_error, scale_error);
+  LoopFrame *cur_frame = new LoopFrame(fh, pts_dso, {fx, fy, cx, cy},
+                                       pts_spherical, dso_error, scale_error);
   boost::unique_lock<boost::mutex> lk_lfq(loop_frame_queue_mutex_);
   loop_frame_queue_.emplace(cur_frame);
 }
@@ -230,11 +214,10 @@ void LoopHandler::run() {
     // Connection to previous keyframe
     if (loop_frames_.size() > 1) {
       auto prv_frame = loop_frames_[loop_frames_.size() - 2];
-      Eigen::Matrix4d tfm_prv_cur =
-          (prv_frame->tfm_w_c.inverse() * cur_frame->tfm_w_c)
-              .to_homogeneous_matrix();
+      g2o::SE3Quat tfm_prv_cur =
+          (prv_frame->tfm_w_c.inverse() * cur_frame->tfm_w_c);
       cur_frame->edges.emplace_back(
-          new LoopEdge(prv_frame->id, tfm_prv_cur.inverse(),
+          new LoopEdge(prv_frame->kf_id, tfm_prv_cur.inverse(),
                        cur_frame->dso_error, cur_frame->scale_error));
     }
 
@@ -253,7 +236,7 @@ void LoopHandler::run() {
     sc_ptr_->generate(cur_frame->pts_spherical, ringkey, signature,
                       lidar_range_, tfm_pca_rig);
     auto t1 = std::chrono::steady_clock::now();
-    sc_generation_time_.emplace_back(duration(t0, t1));
+    sc_generation_time_.emplace_back(t1 - t0);
     cur_frame->tfm_pca_rig = tfm_pca_rig;
     cur_frame->signature = signature;
 
@@ -263,7 +246,7 @@ void LoopHandler::run() {
     t0 = std::chrono::steady_clock::now();
     search_ringkey(ringkey, ringkeys_, ringkey_candidates);
     t1 = std::chrono::steady_clock::now();
-    search_ringkey_time_.emplace_back(duration(t0, t1));
+    search_ringkey_time_.emplace_back(t1 - t0);
 
     if (!ringkey_candidates.empty()) {
       // search by ScanContext
@@ -273,11 +256,12 @@ void LoopHandler::run() {
       search_sc(signature, loop_frames_, ringkey_candidates,
                 sc_ptr_->getWidth(), matched_idx, sc_diff);
       t1 = std::chrono::steady_clock::now();
-      search_sc_time_.emplace_back(duration(t0, t1));
+      search_sc_time_.emplace_back(t1 - t0);
 
       if (sc_diff < scan_context_thres_) {
         auto matched_frame = loop_frames_[matched_idx];
-        printf("%d - %d SC: %.3f ", cur_id_, matched_frame->id, sc_diff);
+        printf("%4d - %4d  SC: %.3f  ", cur_frame->incoming_id,
+               matched_frame->incoming_id, sc_diff);
 
         // calculate the initial tfm_matched_cur from ScanContext
         Eigen::Matrix4d tfm_cur_matched =
@@ -285,54 +269,61 @@ void LoopHandler::run() {
 
         // first try direct alignment
         Eigen::Matrix4d tfm_cur_matched_direct = tfm_cur_matched;
+        float pose_error;
         t0 = std::chrono::steady_clock::now();
         bool direct_succ = pose_estimator_->estimate(
             matched_frame->pts_dso, matched_frame->ab_exposure, cur_frame->fh,
-            cur_frame->cam, tfm_cur_matched_direct, pyrLevelsUsed - 1);
+            cur_frame->cam, pyrLevelsUsed - 1, tfm_cur_matched_direct,
+            pose_error);
         t1 = std::chrono::steady_clock::now();
-        direct_est_time_.emplace_back(duration(t0, t1));
+        direct_est_time_.emplace_back(t1 - t0);
 
         // try icp if direct alignment failed
         bool icp_succ = false;
         Eigen::Matrix4d tfm_cur_matched_icp = tfm_cur_matched;
         if (!direct_succ) {
           t0 = std::chrono::steady_clock::now();
-          icp_succ = icp(matched_frame->pts_spherical, tfm_cur_matched_icp,
-                         cur_frame->pts_spherical);
+          icp_succ = icp(matched_frame->pts_spherical, cur_frame->pts_spherical,
+                         tfm_cur_matched_icp, pose_error);
           t1 = std::chrono::steady_clock::now();
-          icp_time_.emplace_back(duration(t0, t1));
+          icp_time_.emplace_back(t1 - t0);
         }
 
         if (direct_succ || icp_succ) {
           if (direct_succ) {
             direct_loop_count_++;
             tfm_cur_matched = tfm_cur_matched_direct;
+            pose_error *= DIRECT_ERROR_SCALE;
+            printf("            add loop\n");
           } else {
             icp_loop_count_++;
             tfm_cur_matched = tfm_cur_matched_icp;
+            pose_error *= ICP_ERROR_SCALE;
+            printf("add loop\n");
           }
-          printf("add loop\n");
 
           // add the loop constraint
           cur_frame->edges.emplace_back(
-              new LoopEdge(matched_frame->id, tfm_cur_matched,
-                           cur_frame->dso_error, cur_frame->scale_error));
+              new LoopEdge(matched_frame->kf_id,
+                           g2o::SE3Quat(tfm_cur_matched.block<3, 3>(0, 0),
+                                        tfm_cur_matched.block<3, 1>(0, 3)),
+                           pose_error, matched_frame->scale_error));
 
           // run pose graph optimization
           t0 = std::chrono::steady_clock::now();
           optimize();
           t1 = std::chrono::steady_clock::now();
-          opt_time_.emplace_back(duration(t0, t1));
+          opt_time_.emplace_back(t1 - t0);
 
           // update the trajectory
           for (auto &lf : loop_frames_) {
             g2o::VertexSE3 *v =
-                (g2o::VertexSE3 *)pose_optimizer_.vertex(lf->id);
+                (g2o::VertexSE3 *)pose_optimizer_.vertex(lf->kf_id);
             auto new_tfm_wc = v->estimate().matrix();
             lf->tfm_w_c = g2o::SE3Quat(new_tfm_wc.block<3, 3>(0, 0),
                                        new_tfm_wc.block<3, 1>(0, 3));
             if (pangolin_viewer_) {
-              pangolin_viewer_->modifyKeyframePoseByKFID(lf->id,
+              pangolin_viewer_->modifyKeyframePoseByKFID(lf->kf_id,
                                                          SE3(new_tfm_wc));
             }
           }
@@ -350,8 +341,10 @@ void LoopHandler::run() {
         }
       }
     }
-    pangolin_viewer_->refreshLidarData(lidar_pts,
-                                       cur_frame->pts_spherical.size());
+    if (pangolin_viewer_) {
+      pangolin_viewer_->refreshLidarData(lidar_pts,
+                                         cur_frame->pts_spherical.size());
+    }
     delete cur_frame->fh;
     usleep(5000);
   }

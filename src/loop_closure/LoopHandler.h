@@ -15,17 +15,31 @@
 
 #pragma once
 #include <boost/thread.hpp>
+#include <chrono>
 #include <flann/flann.hpp>
+#include <queue>
+
 #include <g2o/core/block_solver.h>
 #include <g2o/types/slam3d/types_slam3d.h>
-#include <queue>
 
 #include "FullSystem/HessianBlocks.h"
 #include "util/FrameShell.h"
 
+#include "loop_closure/loop_detection/ScanContext.h"
 #include "loop_closure/pangolin_viewer/PangolinLoopViewer.h"
 #include "loop_closure/pose_estimation/PoseEstimator.h"
-#include "loop_closure/scan_context/ScanContext.h"
+
+typedef std::vector<std::chrono::duration<long int, std::ratio<1, 1000000000>>>
+    TimeVector;
+
+// normalize dso errors to roughly around 1.0
+#define DSO_ERROR_SCALE 5.0
+#define SCALE_ERROR_SCALE 0.1
+#define DIRECT_ERROR_SCALE 0.1
+#define ICP_ERROR_SCALE 1.0
+
+// the rotation estimated by DSO is much more accurate than translation
+#define POSE_R_WEIGHT 1e4
 
 namespace dso {
 
@@ -39,26 +53,23 @@ struct LoopEdge {
   g2o::SE3Quat measurement;
   Mat66 information;
 
-  LoopEdge(int i, Eigen::Matrix4d tfm_t_f, float dso_error, float scale_error)
-      : id_from(i), measurement(g2o::SE3Quat(tfm_t_f.block<3, 3>(0, 0),
-                                             tfm_t_f.block<3, 1>(0, 3))) {
-    // heuristically set information matrix by errors
+  LoopEdge(int i, g2o::SE3Quat tfm_t_f, float pose_error, float scale_error)
+      : id_from(i), measurement(tfm_t_f) {
     information.setIdentity();
-    if (dso_error > 0 && scale_error > 0) {
-      information *= (1.0 / dso_error);
-      information.topLeftCorner<3, 3>() *= (1.0 / scale_error);
-    } else {
-      information *= 0;
-    }
+    information *= (1.0 / pose_error);
+    information.topLeftCorner<3, 3>() *=
+        scale_error > 0 ? (1.0 / scale_error) : 1e-9;
+    information.bottomRightCorner<3, 3>() *= POSE_R_WEIGHT;
   }
 };
 
 struct LoopFrame {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-  int id;                        // id for pose graph and visualization
-  int incoming_id;               // to find ground truth
-  g2o::SE3Quat tfm_w_c;          // coordinate in pose graph
-  std::vector<LoopEdge *> edges; // pose edges associated with current frame
+  int kf_id;                      // kF id, for pose graph and visualization
+  int incoming_id;                // increasing id, for ground truth
+  g2o::SE3Quat tfm_w_c;           // coordinate in pose graph
+  Eigen::Vector3d trans_w_c_orig; // original pose for logging
+  std::vector<LoopEdge *> edges;  // pose edges associated with current frame
 
   // loop detection
   SigType signature;           // place signature
@@ -80,14 +91,18 @@ struct LoopFrame {
   // whether has been added to global pose graph
   bool graph_added;
 
-  LoopFrame(int i, int ii, const dso::SE3 &tfm_w_c,
+  LoopFrame(FrameHessian *fh,
             const std::vector<std::pair<Eigen::Vector3d, float *>> &pd,
-            FrameHessian *f, const std::vector<float> &c, float ae,
+            const std::vector<float> &cam,
             const std::vector<Eigen::Vector3d> &ps, float de, float se)
-      : id(i), incoming_id(ii),
-        tfm_w_c(g2o::SE3Quat(tfm_w_c.rotationMatrix(), tfm_w_c.translation())),
-        pts_dso(pd), fh(f), cam(c), ab_exposure(ae), pts_spherical(ps),
-        dso_error(de), scale_error(se), graph_added(false) {}
+      : fh(fh), pts_dso(pd), kf_id(fh->frameID),
+        incoming_id(fh->shell->incoming_id),
+        tfm_w_c(g2o::SE3Quat(fh->shell->camToWorld.rotationMatrix(),
+                             fh->shell->camToWorld.translation())),
+        trans_w_c_orig(tfm_w_c.translation()), cam(cam),
+        ab_exposure(fh->ab_exposure), pts_spherical(ps),
+        dso_error(de * DSO_ERROR_SCALE), scale_error(se * SCALE_ERROR_SCALE),
+        graph_added(false) {}
 
   ~LoopFrame() {
     for (auto &edge : edges) {
@@ -105,11 +120,23 @@ public:
   LoopHandler(float lidar_range, float scan_context_thres,
               IOWrap::PangolinLoopViewer *pangolin_viewer);
   ~LoopHandler();
-  void printTimeStatAndSavePose();
 
   void publishKeyframes(FrameHessian *fh, CalibHessian *HCalib, float dso_error,
                         float scale_error);
   void join();
+
+  void savePose();
+
+  // statistics
+  TimeVector pts_generation_time_;
+  TimeVector sc_generation_time_;
+  TimeVector search_ringkey_time_;
+  TimeVector search_sc_time_;
+  TimeVector direct_est_time_;
+  TimeVector icp_time_;
+  TimeVector opt_time_;
+  int direct_loop_count_;
+  int icp_loop_count_;
 
 private:
   int cur_id_;
@@ -135,17 +162,6 @@ private:
   g2o::SparseOptimizer pose_optimizer_;
   IOWrap::PangolinLoopViewer *pangolin_viewer_;
   void optimize();
-
-  // statistics
-  std::vector<double> pts_generation_time_;
-  std::vector<double> sc_generation_time_;
-  std::vector<double> search_ringkey_time_;
-  std::vector<double> search_sc_time_;
-  std::vector<double> direct_est_time_;
-  std::vector<double> icp_time_;
-  std::vector<double> opt_time_;
-  int direct_loop_count_;
-  int icp_loop_count_;
 };
 
 } // namespace dso

@@ -19,7 +19,7 @@
   <depend>dso</depend>
   <depend>geometry_msgs</depend>
   <depend>roscpp</depend>
-  <depend>pcl_ros</depend>
+  <depend>rosbag</depend>
   <depend>sensor_msgs</depend>
   <depend>cv_bridge</depend>
   <depend>image_transport</depend>

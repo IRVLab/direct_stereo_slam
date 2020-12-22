@@ -29,9 +29,8 @@ inline void align_points_PCA(const std::vector<Eigen::Vector3d> &pts_clr_in,
   my /= pts_clr_in.size();
   mz /= pts_clr_in.size();
 
-  // normalize pts and color
+  // normalize pts
   Eigen::MatrixXd pts_mat(pts_clr_in.size(), 3);
-  std::vector<float> color;
   for (size_t i = 0; i < pts_clr_in.size(); i++) {
     pts_mat(i, 0) = pts_clr_in[i](0) - mx;
     pts_mat(i, 1) = pts_clr_in[i](1) - my;
@@ -46,13 +45,13 @@ inline void align_points_PCA(const std::vector<Eigen::Vector3d> &pts_clr_in,
   auto v2 = es.eigenvectors().col(2);
 
   // rotate pts
-  auto nx = pts_mat * v0;
-  auto ny = pts_mat * v1;
-  auto nz = pts_mat * v2;
+  auto nx = (pts_mat * v0).eval();
+  auto ny = (pts_mat * v1).eval();
+  auto nz = (pts_mat * v2).eval();
 
   pts_clr_out.clear();
   for (size_t i = 0; i < pts_clr_in.size(); i++) {
-    pts_clr_out.push_back({nx(i), ny(i), nz(i)});
+    pts_clr_out.emplace_back(Eigen::Vector3d(nx(i), ny(i), nz(i)));
   }
 
   // Transformation

@@ -19,7 +19,7 @@
 #include <vector>
 
 #define FLANN_NN 3
-#define LOOP_MARGIN 200
+#define LOOP_MARGIN 100
 #define RINGKEY_THRES 0.1
 
 inline void search_ringkey(const flann::Matrix<float> &ringkey,

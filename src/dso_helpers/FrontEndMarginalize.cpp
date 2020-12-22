@@ -34,8 +34,6 @@
 
 #include "IOWrapper/Output3DWrapper.h"
 
-#include "FullSystem/CoarseTracker.h"
-
 namespace dso {
 
 inline void
@@ -155,6 +153,7 @@ void FrontEnd::marginalizeFrame(FrameHessian *frame, float scale_error) {
   ef_->marginalizeFrame(frame->efFrame);
 
   // drop all observations of existing points in that frame.
+  static float last_dso_error = 10e5;
   float dso_error = 0;
   int energy_count = 0;
   for (FrameHessian *fh : frame_hessians_) {
@@ -181,11 +180,12 @@ void FrontEnd::marginalizeFrame(FrameHessian *frame, float scale_error) {
     }
   }
   // err = err / count^2 to emphasize on the count
-  // *100 is to normalize the error
   dso_error = dso_error / energy_count / energy_count;
   if (energy_count == 0) {
-    dso_error = -1;
+    printf("dso_error has zero energy count!\n");
+    dso_error = 10 * last_dso_error;
   }
+  last_dso_error = dso_error;
 
   {
     std::vector<FrameHessian *> v;
@@ -197,13 +197,8 @@ void FrontEnd::marginalizeFrame(FrameHessian *frame, float scale_error) {
   // detect if dso is resetted
   static int prv_existing_kf_size = -1;
   if (prv_existing_kf_size != prev_kf_size_) {
-    dso_error = -100;
+    dso_error = sqrtf(-1);
     prv_existing_kf_size = prev_kf_size_;
-  }
-
-  if (dso_error < 0 || scale_error < 0) {
-    printf("dso_error: %.2f * %d - scale_error: %.2f \n", dso_error,
-           energy_count, scale_error);
   }
 
   loop_handler_->publishKeyframes(frame, &h_calib_, dso_error, scale_error);

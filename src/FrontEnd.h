@@ -17,10 +17,9 @@
 
 #pragma once
 
-#include "util/NumType.h"
-#include "util/globalCalib.h"
-#include "vector"
+#include <chrono>
 #include <deque>
+#include <vector>
 
 #include "FullSystem/HessianBlocks.h"
 #include "FullSystem/PixelSelector2.h"
@@ -30,6 +29,7 @@
 #include "util/IndexThreadReduce.h"
 #include "util/NumType.h"
 #include "util/Undistort.h"
+#include "util/globalCalib.h"
 #include <iostream>
 
 #include "opencv2/core/core.hpp"
@@ -38,7 +38,7 @@
 #include <queue>
 
 #include "loop_closure/LoopHandler.h"
-#include "scale_optimization/ScaleOptimizer.h"
+#include "scale_optimization/TrackerAndScaler.h"
 
 namespace dso {
 namespace IOWrap {
@@ -47,7 +47,7 @@ class Output3DWrapper;
 
 class PixelSelector;
 class PCSyntheticPoint;
-class CoarseTracker;
+class TrackerAndScaler;
 struct FrameHessian;
 struct PointHessian;
 class CoarseInitializer;
@@ -61,11 +61,13 @@ class FrontEnd {
 public:
   /* ============================== DSO stuff ============================== */
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-  FrontEnd(int prev_kf_size = 0);
+  FrontEnd(const std::vector<double> &tfm_vec, const Mat33f &K1,
+           float scale_opt_thres, int prev_kf_size = 0);
   virtual ~FrontEnd();
 
   // adds a new frame, and creates point & residual structs.
-  void addActiveFrame(ImageAndExposure *image, int id);
+  void addActiveStereoFrame(ImageAndExposure *image0, ImageAndExposure *image1,
+                            int incoming_id);
 
   // marginalizes a frame. drops / marginalizes points & residuals.
   void marginalizeFrame(FrameHessian *frame, float scale_error);
@@ -85,17 +87,15 @@ public:
 
   void setGammaFunction(float *BInv);
 
-  /* ========================= Scale optimization ========================== */
-  void setScaleOptimizer(ScaleOptimizer *scale_optimizer, float accept_thres);
-  void addStereoImg(cv::Mat stereo_img, int stereo_id);
-
   /* ============================ Loop closure ============================= */
   SE3 cur_pose_;
   void setLoopHandler(LoopHandler *loop_handler);
   int getTotalKFSize();
 
   /* ============================= Statistics ============================== */
-  void printTimeStat();
+  TimeVector feature_detect_time_;
+  TimeVector scale_opt_time_;
+  TimeVector opt_time_;
 
 private:
   /* ============================== DSO stuff ============================== */
@@ -180,14 +180,15 @@ private:
   std::vector<float> all_res_vec_;
 
   // mutex etc. for tracker exchange.
-  boost::mutex coarse_tracker_swap_mutex_;   // if tracker sees that there is a
-                                             // new reference, tracker locks
-                                             // [coarse_tracker_swap_mutex_] and
-                                             // swaps the two.
-  CoarseTracker *coarse_tracker_for_new_kf_; // set as as reference. protected
-                                             // by [coarse_tracker_swap_mutex_].
-  CoarseTracker *coarse_tracker_; // always used to track new frames. protected
-                                  // by [track_mutex_].
+  boost::mutex coarse_tracker_swap_mutex_; // if tracker sees that there is a
+                                           // new reference, tracker locks
+                                           // [coarse_tracker_swap_mutex_] and
+                                           // swaps the two.
+  TrackerAndScaler
+      *tracker_scaler_for_new_kf_;   // set as as reference. protected
+                                     // by [coarse_tracker_swap_mutex_].
+  TrackerAndScaler *tracker_scaler_; // always used to track new frames.
+                                     // protected by [track_mutex_].
   float min_id_jet_vis_tracker_, max_id_jet_vis_tracker_;
   float min_id_jet_vis_debug_, max_id_jet_vis_debug_;
 
@@ -206,20 +207,13 @@ private:
   int last_ref_stop_id_;
 
   /* ========================= Scale optimization ========================== */
-  std::queue<std::pair<int, cv::Mat>> stereo_id_img_queue_;
+  FrameHessian *fh1_;
   std::vector<float> scale_errors_;
-  ScaleOptimizer *scale_optimizer_;
-  float scale_accept_thres_; // threshold to accept the result
+  float scale_opt_thres_; // threshold to accept the result
   float optimizeScale();
 
   /* ============================ Loop closure ============================= */
   int prev_kf_size_; // previous kf size for increasing kf id
   LoopHandler *loop_handler_;
-
-  /* ============================= Statistics ============================== */
-  std::vector<int> pts_count_;
-  std::vector<double> feature_detect_time_;
-  std::vector<double> scale_opt_time_;
-  std::vector<double> opt_time_;
 };
 } // namespace dso

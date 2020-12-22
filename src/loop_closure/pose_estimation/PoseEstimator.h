@@ -24,10 +24,9 @@
 #include <math.h>
 
 #define RES_THRES 10.0
-#define INNER_RATIO 0.9
-#define XY_THRES 0.3
-#define Z_THRES 2.5
-#define RAD_THRES 0.2
+#define INNER_PERCENT 90
+// #define TRANS_THRES 3.0
+// #define ROT_THRES 0.2
 
 namespace dso {
 struct FrameHessian;
@@ -42,8 +41,8 @@ public:
 
   bool estimate(const std::vector<std::pair<Eigen::Vector3d, float *>> &pts,
                 float ref_ab_exposure, FrameHessian *new_fh,
-                const std::vector<float> &cam, Eigen::Matrix4d &lastToNew,
-                int coarsestLvl);
+                const std::vector<float> &new_cam, int coarsest_lvl,
+                Eigen::Matrix4d &ref_to_new, float &pose_error);
 
 private:
   void makeK(const std::vector<float> &cam);
@@ -52,12 +51,8 @@ private:
   void calcGSSSE(int lvl, Mat88 &H_out, Vec8 &b_out, const SE3 &refToNew,
                  AffLight aff_g2l);
 
-  bool debug_print_;
-
   float fx_[PYR_LEVELS];
   float fy_[PYR_LEVELS];
-  float fxi[PYR_LEVELS];
-  float fyi[PYR_LEVELS];
   float cx_[PYR_LEVELS];
   float cy_[PYR_LEVELS];
   int w_[PYR_LEVELS];

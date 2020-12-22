@@ -42,8 +42,8 @@ transformPoints(const std::vector<Eigen::Vector3d> &pts_input,
 }
 
 inline bool icp(const std::vector<Eigen::Vector3d> &pts_source,
-                Eigen::Matrix4d &tfm_target_source,
-                const std::vector<Eigen::Vector3d> &pts_target) {
+                const std::vector<Eigen::Vector3d> &pts_target,
+                Eigen::Matrix4d &tfm_target_source, float &icp_score) {
 
   Eigen::Matrix4d I4;
   I4.setIdentity();
@@ -66,7 +66,7 @@ inline bool icp(const std::vector<Eigen::Vector3d> &pts_source,
   tfm_target_source =
       icp.getFinalTransformation().cast<double>() * tfm_target_source;
 
-  double icp_score = icp.getFitnessScore();
-  printf("icp: %.3f ", icp_score);
+  icp_score = icp.getFitnessScore();
+  printf("icp: %5.2f  ", icp_score);
   return icp_score < ICP_THRES;
 }

@@ -27,6 +27,9 @@
 #include "SSE2NEON.h"
 #endif
 
+#define DEBUG_PLOT false
+#define DEBUG_PRINT false
+
 namespace dso {
 
 template <int b, typename T>
@@ -50,7 +53,6 @@ PoseEstimator::PoseEstimator(int ww, int hh) : ref_aff_g2l_(0, 0) {
   buf_warped_ref_color_ = allocAligned<4, float>(ww * hh, ptr_to_delete_);
 
   new_frame_ = 0;
-  debug_print_ = false;
   w_[0] = h_[0] = 0;
 }
 
@@ -242,17 +244,12 @@ Vec6 PoseEstimator::calcRes(int lvl, const SE3 &refToNew, AffLight aff_g2l,
         fabs(residual) < setting_huberTH ? 1 : setting_huberTH / fabs(residual);
 
     if (plot_img)
-      resImage->setPixel4(Ku, Kv, Vec3b(0, 0, 255));
+      resImage->setPixel4(Ku, Kv, Vec3b(refColor, refColor, refColor));
     if (fabs(residual) > cutoffTH) {
-      if (plot_img)
-        resImage->setPixel4(Ku, Kv, Vec3b(0, 0, 255));
       E += maxEnergy;
       numTermsInE++;
       numSaturated++;
     } else {
-      if (plot_img)
-        resImage->setPixel4(Ku, Kv, Vec3b(0, 255, 0));
-
       E += hw * residual * residual * (2 - hw);
       numTermsInE++;
 
@@ -282,8 +279,8 @@ Vec6 PoseEstimator::calcRes(int lvl, const SE3 &refToNew, AffLight aff_g2l,
   buf_warped_n_ = numTermsInWarped;
 
   if (plot_img) {
-    IOWrap::displayImage("RES", resImage, false);
-    // IOWrap::waitKey(0);
+    IOWrap::displayImage("Loop Pose Residual", resImage, false);
+    IOWrap::waitKey(0);
     delete resImage;
   }
 
@@ -300,13 +297,14 @@ Vec6 PoseEstimator::calcRes(int lvl, const SE3 &refToNew, AffLight aff_g2l,
 
 bool PoseEstimator::estimate(
     const std::vector<std::pair<Eigen::Vector3d, float *>> &pts,
-    float ref_ab_exposure, FrameHessian *new_fh, const std::vector<float> &cam,
-    Eigen::Matrix4d &lastToNew, int coarsestLvl) {
+    float ref_ab_exposure, FrameHessian *new_fh,
+    const std::vector<float> &new_cam, int coarsest_lvl,
+    Eigen::Matrix4d &ref_to_new, float &pose_error) {
   int maxIterations[] = {10, 20, 50, 50, 50};
   float lambdaExtrapolationLimit = 0.001;
-  assert(coarsestLvl < 5 && coarsestLvl < pyrLevelsUsed);
+  assert(coarsest_lvl < 5 && coarsest_lvl < pyrLevelsUsed);
 
-  makeK(cam);
+  makeK(new_cam);
   pts_ = pts;
 
   int lastInners[PYR_LEVELS];
@@ -319,13 +317,12 @@ bool PoseEstimator::estimate(
   ref_ab_exposure_ = ref_ab_exposure;
   AffLight aff_g2l_current = AffLight();
 
-  SE3 refToNew_current(lastToNew.block<3, 3>(0, 0),
-                       lastToNew.block<3, 1>(0, 3));
+  SE3 refToNew_current(ref_to_new.block<3, 3>(0, 0),
+                       ref_to_new.block<3, 1>(0, 3));
 
   bool haveRepeated = false;
-  bool haveAccepted = false;
 
-  for (int lvl = coarsestLvl; lvl >= 0; lvl--) {
+  for (int lvl = coarsest_lvl; lvl >= 0; lvl--) {
     Mat88 H;
     Vec8 b;
     float levelCutoffRepeat = 1;
@@ -345,7 +342,7 @@ bool PoseEstimator::estimate(
 
     float lambda = 0.01;
 
-    if (debug_print_) {
+    if (DEBUG_PRINT) {
       Vec2f relAff =
           AffLight::fromToVecExposure(ref_ab_exposure_, new_frame_->ab_exposure,
                                       ref_aff_g2l_, aff_g2l_current)
@@ -415,7 +412,7 @@ bool PoseEstimator::estimate(
 
       bool accept = (resNew[0] / resNew[1]) < (resOld[0] / resOld[1]);
 
-      if (debug_print_) {
+      if (DEBUG_PRINT) {
         Vec2f relAff = AffLight::fromToVecExposure(ref_ab_exposure_,
                                                    new_frame_->ab_exposure,
                                                    ref_aff_g2l_, aff_g2l_new)
@@ -436,7 +433,6 @@ bool PoseEstimator::estimate(
         aff_g2l_current = aff_g2l_new;
         refToNew_current = refToNew_new;
         lambda *= 0.5;
-        haveAccepted = true;
       } else {
         lambda *= 4;
         if (lambda < lambdaExtrapolationLimit)
@@ -444,7 +440,7 @@ bool PoseEstimator::estimate(
       }
 
       if (!(inc.norm() > 1e-3)) {
-        if (debug_print_)
+        if (DEBUG_PRINT)
           printf("inc too small, break!\n");
         break;
       }
@@ -461,21 +457,52 @@ bool PoseEstimator::estimate(
   }
 
   // set!
-  lastToNew = refToNew_current.matrix();
+  ref_to_new = refToNew_current.matrix();
+  pose_error = lastResiduals[0];
 
   // check if the final pose is:
-  // 1. with small residual;
-  // 2. with high inner ratio;
-  // 3. close enough as loop closure
-  bool low_res = lastResiduals[0] < RES_THRES;
-  float inlier_ratio = float(lastInners[0]) / pts.size();
-  bool enough_inlier = inlier_ratio > INNER_RATIO;
-  auto tfm_se3 = SE3(lastToNew).log();
-  bool tfm_close = tfm_se3.head<2>().norm() < XY_THRES &&
-                   fabs(tfm_se3(2)) < Z_THRES &&
-                   tfm_se3.tail<3>().norm() < RAD_THRES;
-  printf("direct: (%.3f, %.3f) ", lastResiduals[0], inlier_ratio);
-  return haveAccepted && low_res && enough_inlier && tfm_close;
+  // 1. affine coefficients are reasonable
+  bool aff_good = true;
+  if ((setting_affineOptModeA != 0 && (fabsf(aff_g2l_current.a) > 1.2)) ||
+      (setting_affineOptModeB != 0 && (fabsf(aff_g2l_current.b) > 200)))
+    aff_good = false;
+
+  Vec2f relAff =
+      AffLight::fromToVecExposure(ref_ab_exposure_, new_frame_->ab_exposure,
+                                  ref_aff_g2l_, aff_g2l_current)
+          .cast<float>();
+
+  if ((setting_affineOptModeA == 0 && (fabsf(logf((float)relAff[0])) > 1.5)) ||
+      (setting_affineOptModeB == 0 && (fabsf((float)relAff[1]) > 200)))
+    aff_good = false;
+
+  // 2. with small residual;
+  bool low_res = pose_error < RES_THRES;
+
+  // 3. with high inner ratio;
+  int inlier_percent = 100 * float(lastInners[0]) / pts.size();
+  bool enough_inlier = inlier_percent > INNER_PERCENT;
+
+  // // 4. close enough as loop closure
+  // auto tfm_se3 = SE3(ref_to_new).log().eval();
+  // float t = tfm_se3.head<3>().norm();
+  // float r = tfm_se3.tail<3>().norm();
+  // bool tfm_close = t < TRANS_THRES && r < ROT_THRES;
+
+  printf("direct: (%5.2f, %3d%%, %s)  ", pose_error, inlier_percent,
+         aff_good ? "Y" : "N");
+
+  // if (low_res && aff_good && !(enough_inlier && tfm_close)) {
+  //   printf("\n");
+  //   calcRes(0, refToNew_current, aff_g2l_current, setting_coarseCutoffTH,
+  //   true);
+  // }
+
+  if (DEBUG_PLOT) {
+    calcRes(1, refToNew_current, aff_g2l_current, setting_coarseCutoffTH, true);
+  }
+
+  return aff_good && low_res && enough_inlier;
 }
 
 } // namespace dso

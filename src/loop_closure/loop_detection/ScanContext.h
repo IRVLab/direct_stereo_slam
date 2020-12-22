@@ -13,14 +13,29 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-inline void merge_points(const std::vector<Eigen::Vector3d> &pts_target,
-                         const std::vector<Eigen::Vector3d> &pts_source,
-                         const Eigen::Matrix4d &tfm_target_source) {
-  Eigen::Matrix<double, 4, 1> pt_source, pt_target;
-  pt_source(3) = 1.0;
-  for (size_t i = 0; i < pts_source.size(); i++) {
-    pt_source.head(3) = pts_source[i];
-    pt_target = tfm_target_source * pt_source;
-    pts_target.push_back({pt_target(0), pt_target(2), -pt_target(1)});
-  }
-}
+#pragma once
+#include <Eigen/Core>
+#include <Eigen/Eigenvalues>
+#include <iostream>
+#include <vector>
+
+#include <flann/flann.hpp>
+
+typedef std::vector<std::pair<int, double>> SigType;
+
+class ScanContext {
+public:
+  ScanContext();
+  ScanContext(int s, int r);
+
+  unsigned int getHeight();
+  unsigned int getWidth();
+
+  void generate(const std::vector<Eigen::Vector3d> &pts_spherical,
+                flann::Matrix<float> &ringkey, SigType &signature,
+                double lidar_range, Eigen::Matrix4d &tfm_pca_rig);
+
+private:
+  int num_s_;
+  int num_r_;
+};

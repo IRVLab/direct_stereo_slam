@@ -1,7 +1,14 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(direct_stereo_slam)
 
-set( CMAKE_BUILD_TYPE Release )
+set(CMAKE_BUILD_TYPE Release)
+
+set(CMAKE_CXX_FLAGS "-march=native \
+-Wno-deprecated-declarations \
+-Wno-deprecated \
+-Wno-ignored-qualifiers \
+-Wno-reorder \
+-Wno-missing-braces")
 
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
@@ -11,22 +18,14 @@ find_package(g2o REQUIRED )
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
   roscpp
-  pcl_ros
+  rosbag
   sensor_msgs
   cv_bridge
   image_transport
   message_filters
 )
 
-catkin_package(
-  CATKIN_DEPENDS
-  geometry_msgs
-  roscpp
-  sensor_msgs
-  cv_bridge
-  image_transport
-  message_filters
-)
+catkin_package()
 
 include_directories(
   ${PROJECT_SOURCE_DIR}
@@ -35,8 +34,6 @@ include_directories(
   ${PCL_INCLUDE_DIRS}
   ${catkin_INCLUDE_DIRS}
 )
-
-set(CMAKE_CXX_FLAGS "-march=native -Wall")
 
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
@@ -66,11 +63,11 @@ add_executable(
   src/main.cpp 
   src/FrontEnd.cpp
   ${DSO_HELPERS_SOURCE_FILES} 
-  src/scale_optimization/ScaleOptimizer.cpp 
+  src/scale_optimization/TrackerAndScaler.cpp 
   src/loop_closure/LoopHandler.cpp 
   src/loop_closure/pangolin_viewer/PangolinLoopViewer.cpp 
   src/loop_closure/pangolin_viewer/KeyFrameDisplay.cpp 
-  src/loop_closure/scan_context/ScanContext.cpp 
+  src/loop_closure/loop_detection/ScanContext.cpp 
   src/loop_closure/pose_estimation/PoseEstimator.cpp)
   
 target_link_libraries(slam_node

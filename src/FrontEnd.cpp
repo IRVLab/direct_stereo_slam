@@ -29,10 +29,8 @@
 #include <algorithm>
 
 #include "FrontEnd.h"
-#include "timing.h"
 
 #include "FullSystem/CoarseInitializer.h"
-#include "FullSystem/CoarseTracker.h"
 
 #include "OptimizationBackend/EnergyFunctional.h"
 #include "OptimizationBackend/EnergyFunctionalStructs.h"
@@ -50,12 +48,14 @@ int FrameHessian::instanceCounter = 0;
 int PointHessian::instanceCounter = 0;
 int CalibHessian::instanceCounter = 0;
 
-FrontEnd::FrontEnd(int prev_kf_size) {
+FrontEnd::FrontEnd(const std::vector<double> &tfm_vec, const Mat33f &K1,
+                   float scale_opt_thres, int prev_kf_size)
+    : scale_opt_thres_(scale_opt_thres), prev_kf_size_(prev_kf_size) {
   selection_map_ = new float[wG[0] * hG[0]];
 
   coarse_distance_map_ = new CoarseDistanceMap(wG[0], hG[0]);
-  coarse_tracker_ = new CoarseTracker(wG[0], hG[0]);
-  coarse_tracker_for_new_kf_ = new CoarseTracker(wG[0], hG[0]);
+  tracker_scaler_ = new TrackerAndScaler(wG[0], hG[0], tfm_vec, K1);
+  tracker_scaler_for_new_kf_ = new TrackerAndScaler(wG[0], hG[0], tfm_vec, K1);
   coarse_initializer_ = new CoarseInitializer(wG[0], hG[0]);
   pixel_selector_ = new PixelSelector(wG[0], hG[0]);
 
@@ -77,10 +77,7 @@ FrontEnd::FrontEnd(int prev_kf_size) {
   min_id_jet_vis_tracker_ = -1;
   max_id_jet_vis_tracker_ = -1;
 
-  scale_optimizer_ = 0;
-
   cur_pose_ = SE3();
-  prev_kf_size_ = prev_kf_size;
 }
 
 FrontEnd::~FrontEnd() {
@@ -90,8 +87,8 @@ FrontEnd::~FrontEnd() {
     delete s;
 
   delete coarse_distance_map_;
-  delete coarse_tracker_;
-  delete coarse_tracker_for_new_kf_;
+  delete tracker_scaler_;
+  delete tracker_scaler_for_new_kf_;
   delete coarse_initializer_;
   delete pixel_selector_;
   delete ef_;
@@ -128,7 +125,7 @@ Vec4 FrontEnd::trackNewCoarse(FrameHessian *fh) {
   for (IOWrap::Output3DWrapper *ow : output_wrapper_)
     ow->pushLiveFrame(fh);
 
-  FrameHessian *lastF = coarse_tracker_->lastRef;
+  FrameHessian *lastF = tracker_scaler_->lastRef;
 
   AffLight aff_last_2_l = AffLight(0, 0);
 
@@ -203,10 +200,11 @@ Vec4 FrontEnd::trackNewCoarse(FrameHessian *fh) {
   for (unsigned int i = 0; i < lastF_2_fh_tries.size(); i++) {
     AffLight aff_g2l_this = aff_last_2_l;
     SE3 lastF_2_fh_this = lastF_2_fh_tries[i];
-    bool trackingIsGood = coarse_tracker_->trackNewestCoarse(
-        fh, lastF_2_fh_this, aff_g2l_this, pyrLevelsUsed - 1,
-        achievedRes); // in each level has to be at least as good as the last
-                      // try.
+    Vec5 currentRes;
+    bool trackingIsGood = tracker_scaler_->trackNewestCoarse(
+        fh, lastF_2_fh_this, aff_g2l_this, pyrLevelsUsed - 1, achievedRes,
+        currentRes); // in each level has to be at least as good as the last
+                     // try.
     tryIterations++;
 
     // if (i != 0) {
@@ -215,20 +213,19 @@ Vec4 FrontEnd::trackNewCoarse(FrameHessian *fh) {
     //          "%f): %f %f %f %f %f -> %f %f %f %f %f \n",
     //          i, i, pyrLevelsUsed - 1, aff_g2l_this.a, aff_g2l_this.b,
     //          achievedRes[0], achievedRes[1], achievedRes[2], achievedRes[3],
-    //          achievedRes[4], coarse_tracker_->lastResiduals[0],
-    //          coarse_tracker_->lastResiduals[1],
-    //          coarse_tracker_->lastResiduals[2],
-    //          coarse_tracker_->lastResiduals[3],
-    //          coarse_tracker_->lastResiduals[4]);
+    //          achievedRes[4], currentRes[0],
+    //          currentRes[1],
+    //          currentRes[2],
+    //          currentRes[3],
+    //          currentRes[4]);
     // }
 
     // do we have a new winner?
-    if (trackingIsGood &&
-        std::isfinite((float)coarse_tracker_->lastResiduals[0]) &&
-        !(coarse_tracker_->lastResiduals[0] >= achievedRes[0])) {
+    if (trackingIsGood && std::isfinite((float)currentRes[0]) &&
+        !(currentRes[0] >= achievedRes[0])) {
       // printf("take over. minRes %f -> %f!\n", achievedRes[0],
-      // coarse_tracker_->lastResiduals[0]);
-      flowVecs = coarse_tracker_->lastFlowIndicators;
+      // currentRes[0]);
+      flowVecs = tracker_scaler_->lastFlowIndicators;
       aff_g2l = aff_g2l_this;
       lastF_2_fh = lastF_2_fh_this;
       haveOneGood = true;
@@ -238,10 +235,9 @@ Vec4 FrontEnd::trackNewCoarse(FrameHessian *fh) {
     if (haveOneGood) {
       for (int i = 0; i < 5; i++) {
         if (!std::isfinite((float)achievedRes[i]) ||
-            achievedRes[i] >
-                coarse_tracker_->lastResiduals[i]) // take over if achievedRes
-                                                   // is either bigger or NAN.
-          achievedRes[i] = coarse_tracker_->lastResiduals[i];
+            achievedRes[i] > currentRes[i]) // take over if achievedRes
+                                            // is either bigger or NAN.
+          achievedRes[i] = currentRes[i];
       }
     }
 
@@ -267,8 +263,8 @@ Vec4 FrontEnd::trackNewCoarse(FrameHessian *fh) {
   fh->shell->camToWorld =
       fh->shell->trackingRef->camToWorld * fh->shell->camToTrackingRef;
 
-  if (coarse_tracker_->firstCoarseRMSE < 0)
-    coarse_tracker_->firstCoarseRMSE = achievedRes[0];
+  if (tracker_scaler_->firstCoarseRMSE < 0)
+    tracker_scaler_->firstCoarseRMSE = achievedRes[0];
 
   if (!setting_debugout_runquiet)
     printf("Coarse Tracker tracked ab = %f %f (exp %f). Res %f!\n", aff_g2l.a,
@@ -378,7 +374,7 @@ void FrontEnd::activatePointsMT() {
   coarse_distance_map_->makeK(&h_calib_);
   coarse_distance_map_->makeDistanceMap(frame_hessians_, newestHs);
 
-  // coarse_tracker_->debugPlotDistMap("distMap");
+  // tracker_scaler_->debugPlotDistMap("distMap");
 
   std::vector<ImmaturePoint *> toOptimize;
   toOptimize.reserve(20000);
@@ -586,28 +582,27 @@ void FrontEnd::flagPointsForRemoval() {
   }
 }
 
-void FrontEnd::addActiveFrame(ImageAndExposure *image, int id) {
-
+void FrontEnd::addActiveStereoFrame(ImageAndExposure *image0,
+                                    ImageAndExposure *image1, int incoming_id) {
   // if(is_lost_) return;
 
   boost::unique_lock<boost::mutex> lock(track_mutex_);
 
-  // ======================== add into all_frame_history_
-  // =========================
+  // ======================= add into all_frame_history_ =======================
   FrameHessian *fh = new FrameHessian();
   FrameShell *shell = new FrameShell();
   shell->camToWorld =
       SE3(); // no lock required, as fh is not used anywhere yet.
   shell->aff_g2l = AffLight(0, 0);
   shell->marginalizedAt = shell->id = all_frame_history_.size();
-  shell->timestamp = image->timestamp;
-  shell->incoming_id = id;
+  shell->timestamp = image0->timestamp;
+  shell->incoming_id = incoming_id;
   fh->shell = shell;
   all_frame_history_.push_back(shell);
 
   // ======================= make Images / derivatives etc. ====================
-  fh->ab_exposure = image->exposure_time;
-  fh->makeImages(image->image, &h_calib_);
+  fh->ab_exposure = image0->exposure_time;
+  fh->makeImages(image0->image, &h_calib_);
 
   if (!initialized_) {
     // use initializer!
@@ -626,15 +621,14 @@ void FrontEnd::addActiveFrame(ImageAndExposure *image, int id) {
       fh->shell->poseValid = false;
       delete fh;
     }
-    return;
   } else // do front-end operation.
   {
     // =================] SWAP tracking reference?. =========================
-    if (coarse_tracker_for_new_kf_->refFrameID > coarse_tracker_->refFrameID) {
+    if (tracker_scaler_for_new_kf_->refFrameID > tracker_scaler_->refFrameID) {
       boost::unique_lock<boost::mutex> crlock(coarse_tracker_swap_mutex_);
-      CoarseTracker *tmp = coarse_tracker_;
-      coarse_tracker_ = coarse_tracker_for_new_kf_;
-      coarse_tracker_for_new_kf_ = tmp;
+      TrackerAndScaler *tmp = tracker_scaler_;
+      tracker_scaler_ = tracker_scaler_for_new_kf_;
+      tracker_scaler_for_new_kf_ = tmp;
     }
 
     Vec4 tres = trackNewCoarse(fh);
@@ -655,8 +649,8 @@ void FrontEnd::addActiveFrame(ImageAndExposure *image, int id) {
               0.95f / setting_keyframesPerSecond;
     } else {
       Vec2 refToFh = AffLight::fromToVecExposure(
-          coarse_tracker_->lastRef->ab_exposure, fh->ab_exposure,
-          coarse_tracker_->lastRef_aff_g2l, fh->shell->aff_g2l);
+          tracker_scaler_->lastRef->ab_exposure, fh->ab_exposure,
+          tracker_scaler_->lastRef_aff_g2l, fh->shell->aff_g2l);
 
       // BRIGHTNESS CHECK
       needToMakeKF = all_frame_history_.size() == 1 ||
@@ -669,7 +663,7 @@ void FrontEnd::addActiveFrame(ImageAndExposure *image, int id) {
                              setting_kfGlobalWeight * setting_maxAffineWeight *
                                  fabs(logf((float)refToFh[0])) >
                          1 ||
-                     2 * coarse_tracker_->firstCoarseRMSE < tres[0];
+                     2 * tracker_scaler_->firstCoarseRMSE < tres[0];
     }
 
     for (IOWrap::Output3DWrapper *ow : output_wrapper_)
@@ -677,14 +671,22 @@ void FrontEnd::addActiveFrame(ImageAndExposure *image, int id) {
 
     cur_pose_ = fh->shell->camToWorld;
 
+    if (needToMakeKF) {
+      // for scale optimization, corresponds to the tracker_scaler_ keyframe
+      fh1_ = new FrameHessian();
+      FrameShell *shell1 = new FrameShell();
+      shell1->incoming_id = incoming_id;
+      fh1_->shell = shell1;
+      fh1_->makeImages(image1->image, 0);
+    }
+
     lock.unlock();
     deliverTrackedFrame(fh, needToMakeKF);
-
-    return;
   }
 }
+
 void FrontEnd::deliverTrackedFrame(FrameHessian *fh, bool needKF) {
-  if (goStepByStep && last_ref_stop_id_ != coarse_tracker_->refFrameID) {
+  if (goStepByStep && last_ref_stop_id_ != tracker_scaler_->refFrameID) {
     MinimalImageF3 img(wG[0], hG[0], fh->dI);
     IOWrap::displayImage("frameToTrack", &img);
     while (true) {
@@ -693,7 +695,7 @@ void FrontEnd::deliverTrackedFrame(FrameHessian *fh, bool needKF) {
         break;
       handleKey(k);
     }
-    last_ref_stop_id_ = coarse_tracker_->refFrameID;
+    last_ref_stop_id_ = tracker_scaler_->refFrameID;
   } else
     handleKey(IOWrap::waitKey(1));
 
@@ -770,8 +772,7 @@ void FrontEnd::makeKeyFrame(FrameHessian *fh) {
   auto t0 = std::chrono::steady_clock::now();
   float rmse = optimize(setting_maxOptIterations);
   auto t1 = std::chrono::steady_clock::now();
-  pts_count_.emplace_back(ef_->nPoints);
-  opt_time_.emplace_back(duration(t0, t1));
+  opt_time_.emplace_back(t1 - t0);
 
   // =============== Figure Out if INITIALIZATION FAILED ============
   if ((all_keyframes_history_.size() == 2 &&
@@ -780,7 +781,7 @@ void FrontEnd::makeKeyFrame(FrameHessian *fh) {
        rmse > 15 * benchmark_initializerSlackFactor) ||
       (all_keyframes_history_.size() == 4 &&
        rmse > 10 * benchmark_initializerSlackFactor)) {
-    printf("I THINK INITIALIZATION FAILED: KF: %d, RMSE: %.2f\n",
+    printf("I THINK INITIALIZATION FAILED: KF: %zu, RMSE: %.2f\n",
            all_keyframes_history_.size(), rmse);
     init_failed_ = true;
   }
@@ -791,22 +792,22 @@ void FrontEnd::makeKeyFrame(FrameHessian *fh) {
   // =========================== REMOVE OUTLIER =========================
   removeOutliers();
 
+  {
+    boost::unique_lock<boost::mutex> crlock(coarse_tracker_swap_mutex_);
+    tracker_scaler_for_new_kf_->makeK(&h_calib_);
+    tracker_scaler_for_new_kf_->setCoarseTrackingRef(frame_hessians_);
+
+    tracker_scaler_for_new_kf_->debugPlotIDepthMap(
+        &min_id_jet_vis_tracker_, &max_id_jet_vis_tracker_, output_wrapper_);
+    tracker_scaler_for_new_kf_->debugPlotIDepthMapFloat(output_wrapper_);
+  }
+
   // =========================== SCALE OPTIMIZATION =========================
-  if (scale_optimizer_ && all_keyframes_history_.size() > 4) {
+  if (scale_opt_thres_ > 0 && all_keyframes_history_.size() > 4) {
     float scale_error = optimizeScale();
     scale_errors_.push_back(scale_error);
   } else {
     scale_errors_.push_back(-1.0);
-  }
-
-  {
-    boost::unique_lock<boost::mutex> crlock(coarse_tracker_swap_mutex_);
-    coarse_tracker_for_new_kf_->makeK(&h_calib_);
-    coarse_tracker_for_new_kf_->setCoarseTrackingRef(frame_hessians_);
-
-    coarse_tracker_for_new_kf_->debugPlotIDepthMap(
-        &min_id_jet_vis_tracker_, &max_id_jet_vis_tracker_, output_wrapper_);
-    coarse_tracker_for_new_kf_->debugPlotIDepthMapFloat(output_wrapper_);
   }
 
   debugPlot("post Optimize");
@@ -822,7 +823,7 @@ void FrontEnd::makeKeyFrame(FrameHessian *fh) {
   t0 = std::chrono::steady_clock::now();
   makeNewTraces(fh, 0);
   t1 = std::chrono::steady_clock::now();
-  feature_detect_time_.emplace_back(duration(t0, t1));
+  feature_detect_time_.emplace_back(t1 - t0);
 
   for (IOWrap::Output3DWrapper *ow : output_wrapper_) {
     ow->publishGraph(ef_->connectivityMap);
@@ -971,57 +972,30 @@ void FrontEnd::setPrecalcValues() {
 }
 
 /* ========================= Scale optimization ========================== */
-void FrontEnd::setScaleOptimizer(ScaleOptimizer *scale_optimizer,
-                                 float accept_thres) {
-  scale_optimizer_ = scale_optimizer;
-  scale_accept_thres_ = accept_thres;
-}
-
-void FrontEnd::addStereoImg(cv::Mat stereo_img, int stereo_id) {
-  if (scale_optimizer_) {
-    stereo_id_img_queue_.push({stereo_id, stereo_img.clone()});
-  }
-}
-
 float FrontEnd::optimizeScale() {
+  boost::unique_lock<boost::mutex> crlock(coarse_tracker_swap_mutex_);
   static bool scale_trapped = false;
   static int scale_opt_fails = 0;
 
-  if (!scale_optimizer_) {
-    return -1;
+  if (scale_opt_thres_ < 0) {
+    return -1.0;
   }
 
-  // find the corresponding stereo frame
-  FrameHessian *last_fh = frame_hessians_.back();
-  int stereo_id = stereo_id_img_queue_.front().first;
-  cv::Mat stereo_img;
-  while (!stereo_id_img_queue_.empty()) {
-    stereo_id = stereo_id_img_queue_.front().first;
-    if (stereo_id == last_fh->shell->incoming_id) {
-      stereo_img = stereo_id_img_queue_.front().second.clone();
-      stereo_id_img_queue_.pop();
-      break;
-    }
-    stereo_id_img_queue_.pop();
-  }
-
-  if (stereo_id != last_fh->shell->incoming_id) {
-    printf("Cannot find stereo frame\n");
-    return -1;
-  }
+  assert(frame_hessians_.back()->shell->incoming_id ==
+         fh1_->shell->incoming_id);
 
   // find the optimal scale
   auto t0 = std::chrono::steady_clock::now();
   float new_scale = 1.0;
   float scale_error = -1;
   if (scale_trapped) {
-    scale_error = scale_optimizer_->optimize(
-        frame_hessians_, stereo_img, &h_calib_, new_scale, pyrLevelsUsed - 1);
+    scale_error = tracker_scaler_for_new_kf_->optimizeScale(fh1_, new_scale,
+                                                            pyrLevelsUsed - 1);
   } else {
     std::vector<float> scale_guess = {0.1, 1, 5, 10, 15, 25, 30, 50};
     for (float cur_scale : scale_guess) {
-      float cur_error = scale_optimizer_->optimize(
-          frame_hessians_, stereo_img, &h_calib_, cur_scale, pyrLevelsUsed - 1);
+      float cur_error = tracker_scaler_for_new_kf_->optimizeScale(
+          fh1_, cur_scale, pyrLevelsUsed - 1);
       if (cur_error > 0 && (scale_error < 0 || scale_error > cur_error)) {
         scale_error = cur_error;
         new_scale = cur_scale;
@@ -1029,9 +1003,11 @@ float FrontEnd::optimizeScale() {
     }
   }
   auto t1 = std::chrono::steady_clock::now();
-  scale_opt_time_.emplace_back(duration(t0, t1));
+  scale_opt_time_.emplace_back(t1 - t0);
+  delete fh1_->shell;
+  delete fh1_;
 
-  bool scale_opt_succeed = scale_error < scale_accept_thres_;
+  bool scale_opt_succeed = scale_error < scale_opt_thres_;
 
   // when scale optimization is working, we don't expect sudden scale change
   bool scale_jump = fabs(new_scale - 1.0) > 0.5;
@@ -1049,27 +1025,33 @@ float FrontEnd::optimizeScale() {
   if (!scale_opt_succeed) {
     printf("Scale rejected: error=%f, scale=%f\n", scale_error, new_scale);
   } else {
-    // adjust the scale of DSO
-    // std::cout << "Changing scale to " << scale << std::endl;
+    // std::cout << "Changing scale to " << new_scale << std::endl;
+
+    /******************* adjust the scale of DSO *******************/
+    // adjust the scale of points in the last KF for tracking
+    tracker_scaler_for_new_kf_->scaleCoarseDepthL0(new_scale);
+
+    // adjust the scale of points in the energy function
+    FrameHessian *last_fh = frame_hessians_.back();
     for (FrameHessian *fh : frame_hessians_) {
       for (PointHessian *ph : fh->pointHessians) {
-        ph->setIdepthScaled(ph->idepth / new_scale);
+        ph->setIdepth(ph->idepth / new_scale);
         ph->setIdepthZero(ph->idepth);
-        if (ph->lastResiduals[0].first != 0 &&
-            ph->lastResiduals[0].second == ResState::IN) {
-          PointFrameResidual *r = ph->lastResiduals[0].first;
-          assert(r->efResidual->isActive() && r->target == last_fh);
-          r->centerProjectedTo[2] /= new_scale;
-        }
       }
     }
 
+    // adjust the scale of translation of last KF to its ref KF
     boost::unique_lock<boost::mutex> crlock(shell_pose_mutex_);
     last_fh->shell->camToTrackingRef.translation() *= new_scale;
     last_fh->shell->camToWorld = last_fh->shell->trackingRef->camToWorld *
                                  last_fh->shell->camToTrackingRef;
     last_fh->setEvalPT_scaled(last_fh->shell->camToWorld.inverse(),
                               last_fh->shell->aff_g2l);
+
+    // Note: due to the FEJ used in KF's poses, we cannot rescale it. But it
+    // will be rescaled heuristically by the rescaled points in the energy
+    // function in the following DSO optimization executions.
+
     setPrecalcValues();
 
     if (!scale_trapped) {
@@ -1088,19 +1070,6 @@ void FrontEnd::setLoopHandler(LoopHandler *loop_handler) {
 
 int FrontEnd::getTotalKFSize() {
   return all_keyframes_history_.size() + prev_kf_size_;
-}
-
-/* ============================= Statistics ============================== */
-void FrontEnd::printTimeStat() {
-  std::cout << "===========VO Time============ " << std::endl;
-  std::cout << "feature_detect " << 1000 * average(feature_detect_time_)
-            << " * " << feature_detect_time_.size() << std::endl;
-  std::cout << "scale_opt " << 1000 * average(scale_opt_time_) << " * "
-            << scale_opt_time_.size() << std::endl;
-  std::cout << "dso_opt " << 1000 * average(opt_time_) << " * "
-            << opt_time_.size() << std::endl;
-  std::cout << "pts_count_ " << average(pts_count_) << std::endl;
-  std::cout << "============================== " << std::endl;
 }
 
 } // namespace dso

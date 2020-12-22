@@ -52,40 +52,41 @@ PangolinLoopViewer::~PangolinLoopViewer() {
 }
 
 void PangolinLoopViewer::run() {
-  pangolin::CreateWindowAndBind("DirectSLAM", 2 * w_, 2 * h_);
-  float ratio = -w_ / (float)h_;
+  pangolin::CreateWindowAndBind("DirectSLAM", 960, 1080);
+  const float ratio = w_ / float(h_);
+
+  auto proj_mat =
+      pangolin::ProjectionMatrix(w_, h_, 200, 200, w_ / 2, h_ / 2, 0.1, 1000);
+  auto model_view =
+      pangolin::ModelViewLookAt(-0, -5, -10, 0, 0, 0, pangolin::AxisNegY);
 
   glEnable(GL_DEPTH_TEST);
 
   // 3D visualization
-  pangolin::OpenGlRenderState Visualization3D_camera(
-      pangolin::ProjectionMatrix(w_, h_, 400, 400, w_ / 2, h_ / 2, 0.1, 1000),
-      pangolin::ModelViewLookAt(-0, -5, -10, 0, 0, 0, pangolin::AxisNegY));
+  pangolin::OpenGlRenderState Visualization3D_camera(proj_mat, model_view);
 
   pangolin::View &Visualization3D_display =
       pangolin::CreateDisplay()
-          .SetBounds(0.0, 1.0, 0.0, 1.0, ratio)
+          .SetBounds(0.3, 1.0, 0.0, 1.0, -ratio)
           .SetHandler(new pangolin::Handler3D(Visualization3D_camera));
 
-  pangolin::View &d_kfDepth =
-      pangolin::Display("imgKFDepth").SetAspect(w_ / (float)h_);
+  // keyframe depth visualization
   pangolin::GlTexture texKFDepth(w_, h_, GL_RGB, false, 0, GL_RGB,
                                  GL_UNSIGNED_BYTE);
-  pangolin::CreateDisplay()
-      .SetBounds(0.0, 0.3, 0.0, 0.5)
-      .SetLayout(pangolin::LayoutEqual)
-      .AddDisplay(d_kfDepth);
+  pangolin::View &d_kfDepth = pangolin::Display("imgKFDepth").SetAspect(ratio);
 
   // lidar visualization
-  pangolin::OpenGlRenderState Visualization_lidar_camera(
-      pangolin::ProjectionMatrix(w_ / 2, h_ / 2, 100, 100, w_ / 4, h_ / 4, 0.1,
-                                 1000),
-      pangolin::ModelViewLookAt(-0, -5, -100, 0, 0, 0, pangolin::AxisNegY));
-
+  pangolin::OpenGlRenderState Visualization_lidar_camera(proj_mat, model_view);
   pangolin::View &Visualization_lidar_display =
-      pangolin::CreateDisplay()
-          .SetBounds(0.0, 0.5, 0.5, 1.0, ratio)
+      pangolin::Display("lidarDisplay")
+          .SetAspect(ratio)
           .SetHandler(new pangolin::Handler3D(Visualization_lidar_camera));
+
+  pangolin::CreateDisplay()
+      .SetBounds(0.0, 0.3, 0.0, 1.0)
+      .SetLayout(pangolin::LayoutEqualHorizontal)
+      .AddDisplay(d_kfDepth)
+      .AddDisplay(Visualization_lidar_display);
 
   // Default hooks for exiting (Esc) and fullscreen (tab).
   while (!pangolin::ShouldQuit() && running_) {
@@ -123,7 +124,7 @@ void PangolinLoopViewer::run() {
     pangolin::FinishFrame();
   }
 
-  // exit(1);
+  exit(1);
 }
 
 void PangolinLoopViewer::close() { running_ = false; }
