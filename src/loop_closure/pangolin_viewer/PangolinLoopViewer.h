@@ -51,6 +51,8 @@ public:
 
   virtual void modifyKeyframePoseByKFID(int id, const SE3 &poseCamToWorld);
 
+  void refreshLidarData(const std::vector<Eigen::Vector3d> &pts, size_t cur_sz);
+
   virtual void pushDepthImage(MinimalImageB3 *image) override;
 
   virtual void join() override;
@@ -58,28 +60,26 @@ public:
 private:
   void drawConstraints();
 
+  void drawLidar();
+
   boost::thread run_thread_;
   bool running_;
   int w_, h_;
-
-  // images rendering
-  boost::mutex open_images_mutex_;
-  MinimalImageB3 *internal_kf_img_;
-  bool kf_img_changed_;
 
   // 3D model rendering
   boost::mutex model_3d_mutex_;
   std::vector<KeyFrameDisplay *> keyframes_;
   std::map<int, KeyFrameDisplay *> keyframes_by_id_;
 
-  float settings_scaled_var_th_;
-  float settings_abs_var_th_;
-  int settings_point_cloud_mode_;
-  float settings_min_rel_bs_;
-  int settings_sparsity_;
+  // lidar rendering
+  boost::mutex model_lidar_mutex_;
+  std::vector<Eigen::Vector3d> lidar_pts_;
+  size_t lidar_cur_sz_;
 
-  std::deque<float> last_n_tracking_ms_;
-  std::deque<float> last_n_mapping_ms_;
+  // images rendering
+  boost::mutex open_images_mutex_;
+  MinimalImageB3 *internal_kf_img_;
+  bool kf_img_changed_;
 };
 
 } // namespace IOWrap

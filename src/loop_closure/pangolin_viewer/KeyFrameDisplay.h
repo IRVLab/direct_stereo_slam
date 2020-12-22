@@ -66,16 +66,14 @@ public:
 
   // copies & filters internal data to GL buffer for rendering. if nothing to
   // do: does nothing.
-  bool refreshPC(bool canRefresh, float scaledTH, float absTH, int mode,
-                 float minBS, int sparsity);
+  void refreshPC();
 
   // renders cam & pointcloud.
-  void drawCam(float lineWidth = 1, float *color = 0, float sizeFactor = 1);
   void drawPC(float pointSize);
 
   int id_;
   bool active_;
-  SE3 tfm_c_w_;
+  SE3 tfm_w_c_;
   bool need_refresh_;
 
   inline bool operator<(const KeyFrameDisplay &other) const {

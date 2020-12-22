@@ -27,11 +27,6 @@
 #include "loop_closure/pose_estimation/PoseEstimator.h"
 #include "loop_closure/scan_context/ScanContext.h"
 
-#define PUB_PC
-#ifdef PUB_PC
-#include <ros/ros.h>
-#endif
-
 namespace dso {
 
 class FrameHessian;
@@ -129,12 +124,6 @@ private:
   std::vector<std::pair<int, Eigen::Vector3d>> pts_nearby_;
   flann::Index<flann::L2<float>> *ringkeys_;
   ScanContext *sc_ptr_;
-
-#ifdef PUB_PC
-  // visualization for ScanContext
-  ros::NodeHandle nh_;
-  ros::Publisher pc_pub_;
-#endif
 
   // loop correction by direct alignment
   PoseEstimator *pose_estimator_;

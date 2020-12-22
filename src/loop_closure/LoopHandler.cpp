@@ -17,7 +17,6 @@
 // loop closure helpers
 #include "loop_closure/process_pts/generate_spherical_points.h"
 #include "loop_closure/process_pts/icp.h"
-#include "loop_closure/process_pts/merge_point_clouds.h"
 #include "loop_closure/scan_context/search_place.h"
 #include "timing.h"
 
@@ -25,12 +24,6 @@
 #include <g2o/core/optimization_algorithm_levenberg.h>
 #include <g2o/core/robust_kernel_impl.h>
 #include <g2o/solvers/eigen/linear_solver_eigen.h>
-
-#ifdef PUB_PC
-#include <pcl/point_types.h>
-#include <pcl_conversions/pcl_conversions.h>
-#include <pcl_ros/point_cloud.h>
-#endif
 
 namespace dso {
 
@@ -57,10 +50,6 @@ LoopHandler::LoopHandler(float lidar_range, float scan_context_thres,
       new g2o::OptimizationAlgorithmLevenberg(
           g2o::make_unique<g2o::BlockSolverX>(std::move(linearSolver)));
   pose_optimizer_.setAlgorithm(algorithm);
-
-#ifdef PUB_PC
-  pc_pub_ = nh_.advertise<pcl::PointCloud<pcl::PointXYZRGB>>("points_icp", 1);
-#endif
 
   running_ = true;
   run_thread_ = boost::thread(&LoopHandler::run, this);
@@ -234,9 +223,8 @@ void LoopHandler::run() {
     LoopFrame *cur_frame = loop_frame_queue_.front();
     loop_frame_queue_.pop();
 
-#ifdef PUB_PC
-    auto pc_ptr = create_point_clouds(cur_frame->pts_spherical, {0, 255, 0});
-#endif
+    // for Pangolin visualization
+    std::vector<Eigen::Vector3d> lidar_pts = cur_frame->pts_spherical;
 
     loop_frames_.emplace_back(cur_frame);
     // Connection to previous keyframe
@@ -349,21 +337,21 @@ void LoopHandler::run() {
             }
           }
 
-#ifdef PUB_PC
-          merge_point_clouds(pc_ptr, matched_frame->pts_spherical,
-                             tfm_cur_matched, {255, 0, 0});
-#endif
+          // merge matech lidar pts for Pangolin visualization
+          Eigen::Matrix<double, 4, 1> pt_matched, pt_cur;
+          pt_matched(3) = 1.0;
+          for (size_t i = 0; i < matched_frame->pts_spherical.size(); i++) {
+            pt_matched.head(3) = matched_frame->pts_spherical[i];
+            pt_cur = tfm_cur_matched * pt_matched;
+            lidar_pts.push_back({pt_cur(0), pt_cur(1), pt_cur(2)});
+          }
         } else {
           printf("\n");
         }
       }
     }
-#ifdef PUB_PC
-    pc_ptr->header.frame_id = "map";
-    pcl_conversions::toPCL(ros::Time::now(), pc_ptr->header.stamp);
-    pc_pub_.publish(pc_ptr);
-    // IOWrap::waitKey(0);
-#endif
+    pangolin_viewer_->refreshLidarData(lidar_pts,
+                                       cur_frame->pts_spherical.size());
     delete cur_frame->fh;
     usleep(5000);
   }

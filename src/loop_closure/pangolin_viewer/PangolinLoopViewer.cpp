@@ -42,6 +42,8 @@ PangolinLoopViewer::PangolinLoopViewer(int w, int h, bool startRunThread) {
 
   if (startRunThread)
     run_thread_ = boost::thread(&PangolinLoopViewer::run, this);
+
+  lidar_cur_sz_ = 0;
 }
 
 PangolinLoopViewer::~PangolinLoopViewer() {
@@ -50,8 +52,8 @@ PangolinLoopViewer::~PangolinLoopViewer() {
 }
 
 void PangolinLoopViewer::run() {
-  pangolin::CreateWindowAndBind("Main", 2 * w_, 2 * h_);
-  const int UI_WIDTH = 180;
+  pangolin::CreateWindowAndBind("DirectSLAM", 2 * w_, 2 * h_);
+  float ratio = -w_ / (float)h_;
 
   glEnable(GL_DEPTH_TEST);
 
@@ -62,8 +64,7 @@ void PangolinLoopViewer::run() {
 
   pangolin::View &Visualization3D_display =
       pangolin::CreateDisplay()
-          .SetBounds(0.0, 1.0, pangolin::Attach::Pix(UI_WIDTH), 1.0,
-                     -w_ / (float)h_)
+          .SetBounds(0.0, 1.0, 0.0, 1.0, ratio)
           .SetHandler(new pangolin::Handler3D(Visualization3D_camera));
 
   pangolin::View &d_kfDepth =
@@ -71,34 +72,20 @@ void PangolinLoopViewer::run() {
   pangolin::GlTexture texKFDepth(w_, h_, GL_RGB, false, 0, GL_RGB,
                                  GL_UNSIGNED_BYTE);
   pangolin::CreateDisplay()
-      .SetBounds(0.0, 0.3, pangolin::Attach::Pix(UI_WIDTH), 1.0)
+      .SetBounds(0.0, 0.3, 0.0, 0.5)
       .SetLayout(pangolin::LayoutEqual)
       .AddDisplay(d_kfDepth);
 
-  // parameter reconfigure gui
-  pangolin::CreatePanel("ui").SetBounds(0.0, 1.0, 0.0,
-                                        pangolin::Attach::Pix(UI_WIDTH));
+  // lidar visualization
+  pangolin::OpenGlRenderState Visualization_lidar_camera(
+      pangolin::ProjectionMatrix(w_ / 2, h_ / 2, 100, 100, w_ / 4, h_ / 4, 0.1,
+                                 1000),
+      pangolin::ModelViewLookAt(-0, -5, -100, 0, 0, 0, pangolin::AxisNegY));
 
-  pangolin::Var<int> settings_point_cloud_mode_("ui.PC_mode", 1, 1, 4, false);
-
-  pangolin::Var<int> settings_sparsity_("ui.sparsity", 1, 1, 20, false);
-  pangolin::Var<double> settings_scaled_var_th_("ui.relVarTH", 0.001, 1e-10,
-                                                1e10, true);
-  pangolin::Var<double> settings_abs_var_th_("ui.absVarTH", 0.001, 1e-10, 1e10,
-                                             true);
-  pangolin::Var<double> settings_min_rel_bs_("ui.minRelativeBS", 0.1, 0, 1,
-                                             false);
-
-  pangolin::Var<int> settings_nPts(
-      "ui.activePoints", setting_desiredPointDensity, 50, 5000, false);
-  pangolin::Var<int> settings_nCandidates(
-      "ui.pointCandidates", setting_desiredImmatureDensity, 50, 5000, false);
-  pangolin::Var<int> settings_nMaxFrames("ui.maxFrames", setting_maxFrames, 4,
-                                         10, false);
-  pangolin::Var<double> settings_kfFrequency(
-      "ui.kfFrequency", setting_kfGlobalWeight, 0.1, 3, false);
-  pangolin::Var<double> settings_gradHistAdd(
-      "ui.minGradAdd", setting_minGradHistAdd, 0, 15, false);
+  pangolin::View &Visualization_lidar_display =
+      pangolin::CreateDisplay()
+          .SetBounds(0.0, 0.5, 0.5, 1.0, ratio)
+          .SetHandler(new pangolin::Handler3D(Visualization_lidar_camera));
 
   // Default hooks for exiting (Esc) and fullscreen (tab).
   while (!pangolin::ShouldQuit() && running_) {
@@ -110,12 +97,8 @@ void PangolinLoopViewer::run() {
     Visualization3D_display.Activate(Visualization3D_camera);
     boost::unique_lock<boost::mutex> lk3d(model_3d_mutex_);
     // pangolin::glDrawColouredCube();
-    int refreshed = 0;
     for (KeyFrameDisplay *fh : keyframes_) {
-      refreshed += (int)(fh->refreshPC(
-          refreshed < 10, this->settings_scaled_var_th_,
-          this->settings_abs_var_th_, this->settings_point_cloud_mode_,
-          this->settings_min_rel_bs_, this->settings_sparsity_));
+      fh->refreshPC();
       fh->drawPC(1);
     }
     drawConstraints();
@@ -131,19 +114,10 @@ void PangolinLoopViewer::run() {
     glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
     texKFDepth.RenderToViewportFlipY();
 
-    // update parameters
-    this->settings_point_cloud_mode_ = settings_point_cloud_mode_.Get();
-
-    this->settings_abs_var_th_ = settings_abs_var_th_.Get();
-    this->settings_scaled_var_th_ = settings_scaled_var_th_.Get();
-    this->settings_min_rel_bs_ = settings_min_rel_bs_.Get();
-    this->settings_sparsity_ = settings_sparsity_.Get();
-
-    setting_desiredPointDensity = settings_nPts.Get();
-    setting_desiredImmatureDensity = settings_nCandidates.Get();
-    setting_maxFrames = settings_nMaxFrames.Get();
-    setting_kfGlobalWeight = settings_kfFrequency.Get();
-    setting_minGradHistAdd = settings_gradHistAdd.Get();
+    Visualization_lidar_display.Activate(Visualization_lidar_camera);
+    boost::unique_lock<boost::mutex> lklidar(model_lidar_mutex_);
+    drawLidar();
+    lklidar.unlock();
 
     // Swap frames and Process Events
     pangolin::FinishFrame();
@@ -166,9 +140,9 @@ void PangolinLoopViewer::drawConstraints() {
 
   glBegin(GL_LINE_STRIP);
   for (unsigned int i = 0; i < keyframes_.size(); i++) {
-    glVertex3f((float)keyframes_[i]->tfm_c_w_.translation()[0],
-               (float)keyframes_[i]->tfm_c_w_.translation()[1],
-               (float)keyframes_[i]->tfm_c_w_.translation()[2]);
+    glVertex3f((float)keyframes_[i]->tfm_w_c_.translation()[0],
+               (float)keyframes_[i]->tfm_w_c_.translation()[1],
+               (float)keyframes_[i]->tfm_w_c_.translation()[2]);
   }
   glEnd();
 }
@@ -202,8 +176,31 @@ void PangolinLoopViewer::publishKeyframes(std::vector<FrameHessian *> &frames,
 void PangolinLoopViewer::modifyKeyframePoseByKFID(int id,
                                                   const SE3 &poseCamToWorld) {
   boost::unique_lock<boost::mutex> lk3d(model_3d_mutex_);
-  keyframes_by_id_[id]->tfm_c_w_ = poseCamToWorld;
+  keyframes_by_id_[id]->tfm_w_c_ = poseCamToWorld;
   keyframes_by_id_[id]->need_refresh_ = true;
+}
+
+void PangolinLoopViewer::refreshLidarData(
+    const std::vector<Eigen::Vector3d> &pts, size_t cur_sz) {
+  boost::unique_lock<boost::mutex> lk(model_lidar_mutex_);
+  assert(cur_sz <= pts.size());
+  lidar_pts_ = pts;
+  lidar_cur_sz_ = cur_sz;
+}
+
+void PangolinLoopViewer::drawLidar() {
+  glPointSize(3.0);
+
+  glBegin(GL_POINTS);
+  for (size_t i = 0; i < lidar_pts_.size(); i++) {
+    if (i < lidar_cur_sz_) {
+      glColor3ub(0, 255, 0);
+    } else {
+      glColor3ub(255, 0, 0);
+    }
+    glVertex3f(lidar_pts_[i](0), lidar_pts_[i](1), lidar_pts_[i](2));
+  }
+  glEnd();
 }
 
 void PangolinLoopViewer::pushDepthImage(MinimalImageB3 *image) {

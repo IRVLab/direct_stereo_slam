@@ -38,14 +38,14 @@ KeyFrameDisplay::KeyFrameDisplay() {
 
   id_ = 0;
   active_ = true;
-  tfm_c_w_ = SE3();
+  tfm_w_c_ = SE3();
 
   need_refresh_ = true;
 
-  my_scaled_th_ = 1e10;
-  my_abs_th_ = 1e10;
+  my_scaled_th_ = 0.001;
+  my_abs_th_ = 0.001;
   my_displayMode_ = 1;
-  my_min_rel_bs_ = 0;
+  my_min_rel_bs_ = 0.1;
   my_sparsify_factor_ = 1;
 
   num_gl_buffer_points_ = 0;
@@ -63,7 +63,7 @@ void KeyFrameDisplay::setFromF(FrameShell *frame, CalibHessian *HCalib) {
   fyi_ = 1 / fy_;
   cxi_ = -cx_ / fx_;
   cyi_ = -cy_ / fy_;
-  tfm_c_w_ = frame->camToWorld;
+  tfm_w_c_ = frame->camToWorld;
   need_refresh_ = true;
 }
 
@@ -140,7 +140,7 @@ void KeyFrameDisplay::setFromKF(FrameHessian *fh, CalibHessian *HCalib) {
   }
   assert(num_sparse_points_ <= npoints);
 
-  tfm_c_w_ = fh->PRE_camToWorld;
+  tfm_w_c_ = fh->PRE_camToWorld;
   need_refresh_ = true;
 }
 
@@ -149,27 +149,14 @@ KeyFrameDisplay::~KeyFrameDisplay() {
     delete[] original_input_sparse_;
 }
 
-bool KeyFrameDisplay::refreshPC(bool canRefresh, float scaledTH, float absTH,
-                                int mode, float minBS, int sparsity) {
-  if (canRefresh) {
-    need_refresh_ = need_refresh_ || my_scaled_th_ != scaledTH ||
-                    my_abs_th_ != absTH || my_displayMode_ != mode ||
-                    my_min_rel_bs_ != minBS || my_sparsify_factor_ != sparsity;
-  }
-
+void KeyFrameDisplay::refreshPC() {
   if (!need_refresh_)
-    return false;
+    return;
   need_refresh_ = false;
-
-  my_scaled_th_ = scaledTH;
-  my_abs_th_ = absTH;
-  my_displayMode_ = mode;
-  my_min_rel_bs_ = minBS;
-  my_sparsify_factor_ = sparsity;
 
   // if there are no vertices, done!
   if (num_sparse_points_ == 0)
-    return false;
+    return;
 
   // make data
   Vec3f *tmpVertexBuffer = new Vec3f[num_sparse_points_ * patternNum];
@@ -263,7 +250,7 @@ bool KeyFrameDisplay::refreshPC(bool canRefresh, float scaledTH, float absTH,
   if (vertexBufferNumPoints == 0) {
     delete[] tmpColorBuffer;
     delete[] tmpVertexBuffer;
-    return true;
+    return;
   }
 
   num_gl_buffer_good_points_ = vertexBufferNumPoints;
@@ -282,51 +269,6 @@ bool KeyFrameDisplay::refreshPC(bool canRefresh, float scaledTH, float absTH,
   buffer_valid_ = true;
   delete[] tmpColorBuffer;
   delete[] tmpVertexBuffer;
-
-  return true;
-}
-
-void KeyFrameDisplay::drawCam(float lineWidth, float *color, float sizeFactor) {
-  if (width_ == 0)
-    return;
-
-  float sz = sizeFactor;
-
-  glPushMatrix();
-
-  Sophus::Matrix4f m = tfm_c_w_.matrix().cast<float>();
-  glMultMatrixf((GLfloat *)m.data());
-
-  if (color == 0) {
-    glColor3f(1, 0, 0);
-  } else
-    glColor3f(color[0], color[1], color[2]);
-
-  glLineWidth(lineWidth);
-  glBegin(GL_LINES);
-  glVertex3f(0, 0, 0);
-  glVertex3f(sz * (0 - cx_) / fx_, sz * (0 - cy_) / fy_, sz);
-  glVertex3f(0, 0, 0);
-  glVertex3f(sz * (0 - cx_) / fx_, sz * (height_ - 1 - cy_) / fy_, sz);
-  glVertex3f(0, 0, 0);
-  glVertex3f(sz * (width_ - 1 - cx_) / fx_, sz * (height_ - 1 - cy_) / fy_, sz);
-  glVertex3f(0, 0, 0);
-  glVertex3f(sz * (width_ - 1 - cx_) / fx_, sz * (0 - cy_) / fy_, sz);
-
-  glVertex3f(sz * (width_ - 1 - cx_) / fx_, sz * (0 - cy_) / fy_, sz);
-  glVertex3f(sz * (width_ - 1 - cx_) / fx_, sz * (height_ - 1 - cy_) / fy_, sz);
-
-  glVertex3f(sz * (width_ - 1 - cx_) / fx_, sz * (height_ - 1 - cy_) / fy_, sz);
-  glVertex3f(sz * (0 - cx_) / fx_, sz * (height_ - 1 - cy_) / fy_, sz);
-
-  glVertex3f(sz * (0 - cx_) / fx_, sz * (height_ - 1 - cy_) / fy_, sz);
-  glVertex3f(sz * (0 - cx_) / fx_, sz * (0 - cy_) / fy_, sz);
-
-  glVertex3f(sz * (0 - cx_) / fx_, sz * (0 - cy_) / fy_, sz);
-  glVertex3f(sz * (width_ - 1 - cx_) / fx_, sz * (0 - cy_) / fy_, sz);
-
-  glEnd();
-  glPopMatrix();
 }
 
 void KeyFrameDisplay::drawPC(float pointSize) {
@@ -338,7 +280,7 @@ void KeyFrameDisplay::drawPC(float pointSize) {
 
   glPushMatrix();
 
-  Sophus::Matrix4f m = tfm_c_w_.matrix().cast<float>();
+  Sophus::Matrix4f m = tfm_w_c_.matrix().cast<float>();
   glMultMatrixf((GLfloat *)m.data());
 
   glPointSize(pointSize);
