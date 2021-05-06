@@ -5,6 +5,8 @@
 - **A Fast and Robust Place Recognition Approach for Stereo Visual Odometry Using LiDAR Descriptors**, J. Mo and J. Sattar, In IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), 2020
 
 ## Dependencies
+[ROS](https://www.ros.org/)
+
 [g2o](https://github.com/RainerKuemmerle/g2o)
 
 When comple, remember to enable DBUILD_WITH_MARCH_NATIVE option:
