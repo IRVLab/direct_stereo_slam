@@ -24,15 +24,15 @@ or set the **DSO_PATH** in CMakeLists.txt.
 ## Install
 ```
 cd catkin_ws/src
-git clone https://github.com/jiawei-mo/direct_stereo_slam.git
+git clone https://github.com/IRVLab/direct_stereo_slam.git
 cd ..
 catkin_make
 ```
 
 ## Usage
-- Calibrate stereo cameras with format of [cams](https://github.com/jiawei-mo/direct_stereo_slam/blob/master/cams). T_stereo is the pose of camera0 in camera1 coordinate, rememeber to put a small number in T_stereo[2,2] for numerical stability if images are stereo pre-calibrated. Refer to [DSO](https://github.com/JakobEngel/dso) for more details of intrisic parameters.
+- Calibrate stereo cameras with format of [cams](https://github.com/IRVLab/direct_stereo_slam/blob/master/cams). T_stereo is the pose of camera0 in camera1 coordinate, rememeber to put a small number in T_stereo[2,2] for numerical stability if images are stereo pre-calibrated. Refer to [DSO](https://github.com/JakobEngel/dso) for more details of intrisic parameters.
 
-- Create a launch file with the format of [sample.launch](https://github.com/jiawei-mo/direct_stereo_slam/blob/master/launch/sample.launch).
+- Create a launch file with the format of [sample.launch](https://github.com/IRVLab/direct_stereo_slam/blob/master/launch/sample.launch).
 
 ```
 roslaunch direct_stereo_slam [YOUR_LAUNCH_FILE]
