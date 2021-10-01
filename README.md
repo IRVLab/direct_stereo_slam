@@ -5,23 +5,42 @@
 - **A Fast and Robust Place Recognition Approach for Stereo Visual Odometry Using LiDAR Descriptors**, J. Mo and J. Sattar, In IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), 2020
 
 ## Dependencies
-[ROS](https://www.ros.org/)
+[ROS](https://www.ros.org/), [PCL](https://pointclouds.org/), [g2o](https://github.com/RainerKuemmerle/g2o), and [DSO](https://github.com/JakobEngel/dso) ([OpenCV](https://opencv.org/), [Pangolin](https://github.com/stevenlovegrove/Pangolin))
 
-[g2o](https://github.com/RainerKuemmerle/g2o)
-
-When comple, remember to enable DBUILD_WITH_MARCH_NATIVE option:
+**For g2o, DSO, and Pangolin, we strongly recommend the (old) versions in the provided [dependencies.zip](https://github.com/IRVLab/direct_stereo_slam/blob/master/dependencies.zip) for smooth install and reasonable results.**
+1. Install Pangolin
 ```
-cmake -DBUILD_WITH_MARCH_NATIVE=ON ..
+cd Pangolin
+mkdir build && cd build
+cmake ..
+make -j4
+sudo make install
 ```
-otherwise, you will get **double free or corruption** error.
+2. Install DSO
+```
+sudo apt install libsuitesparse-dev libeigen3-dev libboost-all-dev libopencv-dev
+cd DSO
+mkdir build && cd build
+cmake ..
+make -j4
+```
+3. Install g2o
+```
+cd g2o
+mkdir build && cd build
+cmake -DBUILD_WITH_MARCH_NATIVE=ON .. # use the flag to avoid possible double-free error
+make -j4
+sudo make install
+```
 
-[DSO](https://github.com/JakobEngel/dso)
+## Install
+1. Link to the external DSO library:
 ```
 export DSO_PATH=[PATH_TO_DSO] (e.g., export DSO_PATH=~/Workspace/dso)
 ```
 or set the **DSO_PATH** in CMakeLists.txt.
 
-## Install
+2. Install direct_stereo_slam using ros/catkin 
 ```
 cd catkin_ws/src
 git clone https://github.com/IRVLab/direct_stereo_slam.git
