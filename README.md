@@ -49,16 +49,22 @@ catkin_make
 ```
 
 ## Usage
+### Preparation
 - Calibrate stereo cameras with format of [cams](https://github.com/IRVLab/direct_stereo_slam/blob/master/cams). T_stereo is the pose of camera0 in camera1 coordinate, rememeber to put a small number in T_stereo[2,2] for numerical stability if images are stereo pre-calibrated. Refer to [DSO](https://github.com/JakobEngel/dso) for more details of intrisic parameters.
 
 - Create a launch file with the format of [sample.launch](https://github.com/IRVLab/direct_stereo_slam/blob/master/launch/sample.launch).
+### Parameters (in launch file)
+- scale_opt_thres: scale optimization accept threshold (e.g., 15.0)
+- lidar_range: imitated LiDAR scan range, set to -1 to disable loop closure (e.g., 40.0 meters)
+- scan_context_thres: Scan Context threshold for a potential loop closure  (e.g., 0.33)
+### Run
 
 ```
 roslaunch direct_stereo_slam [YOUR_LAUNCH_FILE]
 ```
 
-- Ctrl-C to terminate the program, the final trajectory (dslam.txt) will be written to .ros folder.
+Ctrl-C to terminate the program, the final trajectory (dslam.txt) will be written to ~/.ros folder.
 
-## Output file
+## Output file (in ~/.ros folder)
 - dslam.txt: final trajectory [incoming_id, x, y, z];
 - sodso.txt: the trajectory without loop closure, output for comparision.
