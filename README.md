@@ -51,8 +51,8 @@ catkin_make
 ## Usage
 ### Preparation
 - Calibrate stereo cameras with format of [cams](https://github.com/IRVLab/direct_stereo_slam/blob/master/cams). T_stereo is the pose of camera0 in camera1 coordinate, rememeber to put a small number in T_stereo[2,2] for numerical stability if images are stereo pre-calibrated. Refer to [DSO](https://github.com/JakobEngel/dso) for more details of intrisic parameters.
-
 - Create a launch file with the format of [sample.launch](https://github.com/IRVLab/direct_stereo_slam/blob/master/launch/sample.launch).
+- For the evaluation on KITTI and Malaga dataset, we follow [kitti2bag](https://github.com/tomas789/kitti2bag) to generate the bag files.
 ### Parameters (in launch file)
 - scale_opt_thres: scale optimization accept threshold (e.g., 15.0)
 - lidar_range: imitated LiDAR scan range, set to -1 to disable loop closure (e.g., 40.0 meters)
