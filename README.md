@@ -14,12 +14,12 @@ cd Pangolin
 mkdir build && cd build
 cmake ..
 make -j4
-sudo make install
+sudo make install # or set LD_LIBRARY_PATH locally
 ```
 2. Install DSO
 ```
 sudo apt install libsuitesparse-dev libeigen3-dev libboost-all-dev libopencv-dev
-cd DSO
+cd dso
 mkdir build && cd build
 cmake ..
 make -j4
@@ -30,7 +30,7 @@ cd g2o
 mkdir build && cd build
 cmake -DBUILD_WITH_MARCH_NATIVE=ON .. # use the flag to avoid possible double-free error
 make -j4
-sudo make install
+sudo make install # or set LD_LIBRARY_PATH locally
 ```
 
 ## Install
