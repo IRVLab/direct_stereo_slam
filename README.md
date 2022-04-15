@@ -4,12 +4,17 @@
 - **Extending Monocular Visual Odometry to Stereo Camera System by Scale Optimization**, J. Mo and J. Sattar, In IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), 2019
 - **A Fast and Robust Place Recognition Approach for Stereo Visual Odometry Using LiDAR Descriptors**, J. Mo and J. Sattar, In IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), 2020
 
+## Note
+This implementation is tested in Ubuntu 20.04 with ROS Noetic.
+
 ## Dependencies
 [ROS](https://www.ros.org/), [PCL](https://pointclouds.org/), [g2o](https://github.com/RainerKuemmerle/g2o), and [DSO](https://github.com/JakobEngel/dso) ([OpenCV](https://opencv.org/), [Pangolin](https://github.com/stevenlovegrove/Pangolin))
 
 **For g2o, DSO, and Pangolin, we strongly recommend the (old) versions in the provided [dependencies.zip](https://github.com/IRVLab/direct_stereo_slam/blob/master/dependencies.zip) for smooth install and reasonable results.**
 1. Install Pangolin
 ```
+sudo apt install libgl1-mesa-dev libglew-dev cmake 
+sudo apt install libegl1-mesa-dev libwayland-dev libxkbcommon-dev wayland-protocols
 cd Pangolin
 mkdir build && cd build
 cmake ..
